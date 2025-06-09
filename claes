@@ -115,7 +115,6 @@ Options are:
      -openssl    produce encrypted data using pbkdf2 in openssl format
      -128        forces the use of 128 bit AES keys with -openssl 
                  (256 bits is the default)
-     -decrypt    decrypts an encrypted message (default is encrypt)
 
 Full documentation <https://senderek.ie/cryptlib/tools>
 
