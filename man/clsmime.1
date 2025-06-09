@@ -1,0 +1,133 @@
+.TH CLSMIME "1"          "June 2025" "Cryptlib Tools"  "Cryptlib Tools"             CLSMIME "1"
+.SH NAME
+\fBclsmime\fR \- S/MIME public key encryption tool interoperating with Thunderbird, Evolution, Outlook and OpenSSL
+.SH SYNOPSIS
+.B clsmime [OPTIONS] encrypt messagefile certificate
+
+.B clsmime [OPTIONS] decrypt encrypted_message KeysetName
+
+.B clsmime [OPTIONS] sign messagefile KeysetName
+
+.B clsmime [OPTIONS] verify signed_message [CArootCertificate]
+
+.br
+.SH DESCRIPTION
+\fBclsmime\fR encrypts text or binary data with a RSA \fBpublic key\fR stored in a recipients's certificate file.
+.PP
+\fBclsmime\fR decrypts or signs S/MIME data with a RSA \fBprivate key\fR stored in a *.p15 keyset file.
+RSA public and private keys stored in *.p15 keyset file can be generated and managed with \fBclkeys\fR.
+.PP
+\fBclsmime\fR verifies S/MIME signatures with enclosed certificates. The signer's certificate will be 
+checked against an optional issuer CA certificate. This CA certificate will be considered as a trusted
+CA root certificate.
+
+The resulting encrypted and/or signed S/MIME message files can be exchanged with either OpenSSL or
+Email clients that support the processing of S/MIME messages (like Thunderbird, Evolution or MS Outlook).
+
+.SH OPTIONS
+.PP
+.TP
+\fB\-help\fR
+display this help and exit
+.TP
+\fB\-version\fR
+output version information and exit
+.TP
+\fB\-debug\fR
+print debugging information to stderr
+.TP
+\fB\-detach\fR     
+generate a detached signature in S/MIME format as multipart/signed
+.br
+(default is a signature including the enclosed text message)
+.TP
+\fB\-binary\fR
+do not change the input bytes (default is \fBtext mode\fR)
+
+in \fBtext mode\fR all '\\n' are replaced by '\\r\\n' and a Content-Type header is added in front of the input bytes before the message is signed. When clsmime verifies a signed message, the Content-Type header and the additional '\\r' characters are removed after verification. Thus the verification bytes that are stored into the file system match the original text message.
+.TP
+\fB\-certchain\fR
+write the certificate chain to the file system during verification of a S/MIME signature.
+.PP
+
+.SH INTEROPERABILITY
+.PP
+	
+.PP
+.TP
+
+\fBS/MIME capable E-mail clients\fR (Thunderbird, Evolution, Outlook)
+
+\fBThunderbird or Evolution:\fR Import the CA certificate (into the CA section) before you import a user's certificate
+(into the person section).
+
+
+\fBMicrosoft Outlook:\fR Use the contacts tab to enter the Common Name and the email address and finally 
+click on the \\'certificate button\\' to import the contact's certificate stored in a *.cer file.
+
+.TP
+\fBOpenSSL\fR
+
+The following OpenSSL commands can be used to exchange message files with \fBclsmime\fR :\br
+
+\fB Encryption   :\fR openssl smime -encrypt -aes-256-cbc -in message -binary -out message.smime certfile
+
+\fB Decryption   :\fR openssl smime -decrypt -in message  -out message.clear -recip cert -inkey RSAkey
+
+\fB Signing      :\fR openssl smime -sign -in message -text -signer cert -inkey RSAkey -out message.sig
+
+\fB Verification :\fR openssl smime -verify -in message -out message.verified -inkey certfile -CAfile CAcert
+
+\fBCertChains\fR can be examined with: 
+.br
+sed -i \'s/CERTIFICATE CHAIN/PKCS7/\' certchain ; openssl pkcs7 -in certchain -text -print_certs
+.PP
+
+.SH NOTES
+Full documentation <https://senderek.ie/cryptlib/tools>     
+
+This program depends on two packages providing the cryptlib shared object
+library and the python3-bindings to this library.
+
+You can download both packages in RPM or DEB format at 
+https://senderek.ie/cryptlib/downloads
+
+Using FEDORA, you can install the packages cryptlib and cryptlib-python3
+directly from the repository.
+
+In addition the program /bin/systemd-ask-password is needed to read sensible
+data from stdin. This program is part of the systemd package.
+
+.SH "FILES"
+.PP
+.TP
+/usr/bin/systemd-ask-password
+This program is used to provide the passphrase based on a user's input.
+.TP
+/lib64/libcl.so.3.4.8
+The cryptlib library.
+.TP
+/usr/lib/python3.1x/site-packages/cryptlib_py.so
+Bindings to the cryptlib library used by python3.
+.PP
+
+.SH BUGS
+Please report bugs to innovation@senderek.ie
+
+.SH AUTHORS
+.nf
+\fBclsmime\fR is written by Ralf Senderek <innovation@senderek.ie>.
+.br
+\fBCryptlib\fR is written and maintained by Peter Gutmann <pgut001@cs.auckland.ac.nz>
+.fi
+
+.SH COPYRIGHT
+Copyright \(co 2024 - 2025 Ralf Senderek. All rights reserved.
+
+License BSD-3-Clause: <https://senderek.ie/cryptlib/bsd.html>.
+.br
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+.SH "SEE ALSO"
+cryptlib, clkeys, claes, clrsa

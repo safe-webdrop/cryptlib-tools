@@ -1,0 +1,213 @@
+#!/usr/bin/python3
+
+"""
+* File: clsha2
+* Version  : 1.0
+* License  : BSD-3-Clause
+*
+*
+* Copyright (c) 2022 - 2025
+*	Ralf Senderek, Ireland.  All rights reserved.
+*
+* Redistribution and use in source and binary forms, with or without
+* modification, are permitted provided that the following conditions
+* are met:
+* 1. Redistributions of source code must retain the above copyright
+*    notice, this list of conditions and the following disclaimer.
+* 2. Redistributions in binary form must reproduce the above copyright
+*    notice, this list of conditions and the following disclaimer in the
+*    documentation and/or other materials provided with the distribution.
+* 3. All advertising materials mentioning features or use of this software
+*    must display the following acknowledgement:
+*	   This product includes software developed by Ralf Senderek.
+*
+* THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+* ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+* IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+* ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+* FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+* DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+* OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+* HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+* LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+* OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+* SUCH DAMAGE.
+*
+"""
+
+
+import sys, os
+from base64 import *
+from binascii import *
+
+try:
+     from cryptlib_py import *
+except:
+     ERR_IMPORT = """
+     The python3 library is not installed. You need to install
+     the packages cryptlib-python3 and cryptlib.
+     You will find them for a variety of operating systems here:
+            https://senderek.ie/cryptlib
+     or in the Fedora repository.
+     """
+     print(ERR_IMPORT)
+     exit (5)
+
+
+Version = "clsha2 version 1.0"
+HashSize = 32
+OK = 0
+ERR_NOBYTES = 1
+ERR_PERM = 2
+MaxBytes = 500000000
+Source = "file"
+Mode = "hex"
+Text = ""
+InputBytes = ""
+# we try to read all bytes in a single pass
+ReadMoreBytes = False
+FileName = ""
+
+def print_help():
+     Help = """
+SHA2 hashvalues of files or standard input
+     
+usage: clsha1 [OPTION] [FILE]
+
+No FILE or "-" reads from standard input.
+
+Options are:
+     --help       prints this message
+     --version    prints the version
+     --base64     prints the hashvalue in base64 encoding instead of hex
+
+Full documentation <https://senderek.ie/cryptlib/tools/clsha2>     
+
+This program depends on two packages providing the cryptlib shared object
+library and the python3-bindings to this library.
+
+You can download both packages in RPM format at 
+https://senderek.ie/cryptlib/downloads
+
+Or in FEDORA you can install the packages cryptlib and cryptlib-python3
+directly from the repository.
+
+"""
+     print( Help )
+
+
+#############################################################
+if len(sys.argv) > 1 :
+     if sys.argv[1] == "--help":
+          print_help()
+          exit( OK )
+
+     if sys.argv[1] == "--version":
+          print ( Version )
+          exit( OK )
+     
+     if sys.argv[1] == "--base64" or sys.argv[1] == "-b64" :
+          Mode = "base64"
+          try:
+              sys.argv.remove( "-b64" )
+          except:
+              pass
+          try:
+              sys.argv.remove( "--base64" )
+          except:
+              pass
+
+if len(sys.argv) > 1 :
+     if sys.argv[1] == "-":
+          try:
+               Text = sys.stdin.read( MaxBytes )
+               Source = "stdin"
+               FileName = "-"
+          except:
+               exit ( ERR_PERM )
+     elif os.path.isfile(sys.argv[1]):
+          FileName = sys.argv[1]
+          try:
+               F = open( FileName, "rb" )
+               InputBytes = F.read( MaxBytes )
+          except:
+               print( "cannot open file " + str(FileName) )
+               exit ( ERR_PERM )
+else:
+     try:
+          Text = sys.stdin.read( MaxBytes )
+          Source = "stdin"
+          FileName = "-"
+     except:
+          pass
+
+
+##### Begin Cryptlib code #####
+
+cryptInit()
+
+cryptUser = CRYPT_UNUSED
+hashContext_object =  cryptCreateContext( cryptUser, CRYPT_ALGO_SHA2 )
+hashContext = int( hashContext_object )
+Algo = bytearray( b'     ' )
+namesize = cryptGetAttributeString( hashContext, CRYPT_CTXINFO_NAME_ALGO, Algo )
+
+# hashedData must be modifiable Buffer
+hashedData = bytearray()
+if Text:
+     hashedData.extend( Text.encode() )
+else:
+     hashedData.extend( InputBytes )
+
+nullData = bytearray( b'' )
+
+if  len(hashedData) < MaxBytes:
+     # we only need one pass, no looping required
+     cryptEncrypt( hashContext, hashedData )
+     
+else:
+     # use all bytes that have been read already
+     cryptEncrypt( hashContext, hashedData )
+     # there are more bytes to be read
+     ReadMoreBytes = True
+     while ReadMoreBytes: 
+          # start with empty bytearray
+          del( hashedData )
+          hashedData = bytearray()
+          if Source == "file":
+               InputBytes = F.read( MaxBytes )
+               hashedData.extend( InputBytes )
+               if len( InputBytes ) < MaxBytes:
+                    ReadMoreBytes = False
+                    # no more input
+                    F.close()
+          else:
+               Text = sys.stdin.read( MaxBytes )
+               hashedData.extend( Text.encode() )
+               if len( Text ) < MaxBytes:
+                    ReadMoreBytes = False
+          cryptEncrypt( hashContext, hashedData )
+
+if hashedData:     
+     # end the operation with null bytes input
+     if hashedData:
+          cryptEncrypt( hashContext, nullData )
+     else:
+          exit( ERR_NOBYTES )
+
+     # the hashvalue needs a minimum of 32 Bytes
+     hashvalue = bytearray( b' '*HashSize )
+     num =  cryptGetAttributeString( hashContext, CRYPT_CTXINFO_HASHVALUE, hashvalue ) 
+
+     # output
+     if num == HashSize:
+          if Mode == "base64":
+               print ( b64encode( hashvalue ).decode() + "  " + FileName )
+          else:	  
+               print( hexlify( hashvalue ).decode() + "  " + FileName )
+
+cryptDestroyContext( hashContext )
+
+cryptEnd()
+sys.exit( OK )
+

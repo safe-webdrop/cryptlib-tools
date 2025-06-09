@@ -1,0 +1,63 @@
+.\" clsha2 - print SHA256 hash values of files or standard input 
+.TH "clsha2" "1" "" "Ralf Senderek" ""
+.SH "NAME"
+clsha2
+.SH "SYNOPSIS"
+\fBclsha2\fP [OPTION] [FILE]
+.SH "DESCRIPTION"
+.PP 
+\fBclsha2\fP calculates the SHA256 hash value of the input, either a file or
+standard input and prints the hash value in hexadecimal (default) or base64
+encoding on standard output. The hash value is 256 bits long.
+.PP
+No FILE or "-" reads from standard input.
+.PP
+.SH "OPTIONS"
+.IP "\fB--base64 | -b64\fP"
+    prints the hash value base64 encoded. Without this option the hash value
+    is printed hexadecimal
+.IP
+.IP "\fB--help\fP"
+    prints a help text
+.IP
+.IP "\fB--version\fP"
+    prints the version of clsha2
+
+.PP 
+
+.SH "FILES"
+clsha2 uses the cryptlib shared object library and its python3 bindings.
+.PP
+.nf
+/lib64/libcl.so.3.4.8
+/usr/lib/python3.1x/site-packages/cryptlib_py.so
+.fi 
+
+.SH COPYRIGHT
+Copyright \(co 2022 - 2025 Ralf Senderek. All rights reserved.
+
+License BSD-3-Clause: <https://senderek.ie/cryptlib/bsd.html>.
+.br
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+.SH "SEE ALSO"
+.nf
+.I 
+cryptlib
+.fi 
+
+.PP 
+.SH "AUTHORS"
+.nf 
+clsha2 is written by Ralf Senderek <innovation@senderek.ie>.
+.br
+Cryptlib is written and maintained by Peter Gutmann <pgut001@cs.auckland.ac.nz>
+.fi 
+
+.PP 
+.SH "BUGS"
+Of course there aren't any bugs, but if you find any, please sent a report to 
+.br
+\fBinnovation@senderek.ie\fR.
+.fi
