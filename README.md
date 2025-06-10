@@ -84,3 +84,9 @@ clsmime [OPTIONS] verify signed_message [CArootCertificate]
 
 These are only three examples of how you can use Cryptlib to build reliable tools for users.
 And there are many more tools to come in the near future.
+
+## Code Review
+
+Every code review is most welcome, however in order to maintain the stability and reliability of the code base I will carefully vet any contribution
+and I may chose to rewrite it, add comments and documentation, rather than taking it as is. Needless to say that code changes will happen only after
+conclusion of extensive tests.
