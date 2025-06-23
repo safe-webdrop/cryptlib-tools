@@ -64,6 +64,8 @@ Without any options claes produces OpenPGP (base64-encoded) encrypted messages u
 It can decrypt any messages (ascii or binary) produced by GnuPG with the following ciphers:
 AES, AES192, AES256, 3DES and CAST-128.
 
+To mangle the password correctly the option --s2k-digest-algo SHA256 must be used with gpg.
+
 .TP
 \fBopenssl\fR
 

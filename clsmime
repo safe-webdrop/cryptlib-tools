@@ -476,7 +476,7 @@ def clean_envelope():
 
 #-----------------------------------------------------------#
 def sanitize(data):
-     forbidden = "\!\"§&$%()[]{}=?*+~,<>|\\"
+     forbidden = "!\"§&$%()[]{}=?*+~,<>|\\"
      good = ""
      for i in range(len(data)) :
           if (data[i] not in forbidden) and (ord(data[i]) < 128):
