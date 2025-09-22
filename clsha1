@@ -2,7 +2,7 @@
 
 """
 * File: clsha1
-* Version  : 1.0
+* Version  : 1.1
 * License  : BSD-3-Clause
 *
 *
@@ -39,20 +39,20 @@
 import sys, os
 from base64 import *
 from binascii import *
+
 try:
      from cryptlib_py import *
 except:
      ERR_IMPORT = """
-     The python3 library is not installed. You need to install 
-     the packages cryptlib-python3 and cryptlib.
-     You will find them for a variety of operating systems here: 
+     The python3 library is not installed. You need to install the packages cryptlib-python3 and cryptlib.
+     You will find them for a variety of operating systems here:
             https://senderek.ie/cryptlib
      or in the Fedora repository.
      """
      print(ERR_IMPORT)
-     exit (5)
+     exit (-1)
 
-Version = "clsha1 version 1.0"
+Version = "clsha1 version 1.1"
 HashSize = 20
 OK = 0
 ERR_NOBYTES = 1
@@ -60,16 +60,15 @@ ERR_PERM = 2
 MaxBytes = 500000000
 Source = "file"
 Mode = "hex"
-Text = ""
-InputBytes = ""
+InputBytes = bytearray()
 # we try to read all bytes in a single pass
 ReadMoreBytes = False
 FileName = ""
 
 def print_help():
      Help = """
-SHA1 hashvalues of files or standard input
-     
+SHA1 hash values of files or standard input
+
 usage: clsha1 [OPTION] [FILE]
 
 No FILE or "-" reads from standard input.
@@ -79,12 +78,12 @@ Options are:
      --version    prints the version
      --base64     prints the hashvalue in base64 encoding instead of hex
 
-Full documentation <https://senderek.ie/cryptlib/tools/clsha1>     
+Full documentation <https://senderek.ie/cryptlib/tools/clsha1>
 
 This program depends on two packages providing the cryptlib shared object
 library and the python3-bindings to this library.
 
-You can download both packages in RPM format at 
+You can download both packages in RPM format at
 https://senderek.ie/cryptlib/downloads
 
 Or in FEDORA you can install the packages cryptlib and cryptlib-python3
@@ -103,7 +102,7 @@ if len(sys.argv) > 1 :
      if sys.argv[1] == "--version":
           print ( Version )
           exit( OK )
-     
+
      if sys.argv[1] == "--base64" or sys.argv[1] == "-b64" :
           Mode = "base64"
           try:
@@ -115,14 +114,17 @@ if len(sys.argv) > 1 :
           except:
               pass
 
+# all input is read as bytes
 if len(sys.argv) > 1 :
      if sys.argv[1] == "-":
           try:
-               Text = sys.stdin.read( MaxBytes )
+               InputBytes = sys.stdin.buffer.read( MaxBytes )
                Source = "stdin"
                FileName = "-"
           except:
+               print("Error: reading from stdin")
                exit ( ERR_PERM )
+
      elif os.path.isfile(sys.argv[1]):
           FileName = sys.argv[1]
           try:
@@ -133,12 +135,12 @@ if len(sys.argv) > 1 :
                exit ( ERR_PERM )
 else:
      try:
-          Text = sys.stdin.read( MaxBytes )
+          InputBytes = sys.stdin.buffer.read( MaxBytes )
           Source = "stdin"
           FileName = "-"
      except:
-          pass
-
+          print("Error: reading from stdin")
+          exit ( ERR_PERM )
 
 ##### Begin Cryptlib code #####
 
@@ -152,23 +154,20 @@ namesize = cryptGetAttributeString( hashContext, CRYPT_CTXINFO_NAME_ALGO, Algo )
 
 # hashedData must be modifiable Buffer
 hashedData = bytearray()
-if Text:
-     hashedData.extend( Text.encode() )
-else:
-     hashedData.extend( InputBytes )
+hashedData.extend( InputBytes )
 
 nullData = bytearray( b'' )
 
 if  len(hashedData) < MaxBytes:
      # we only need one pass, no looping required
      cryptEncrypt( hashContext, hashedData )
-     
+
 else:
      # use all bytes that have been read already
      cryptEncrypt( hashContext, hashedData )
      # there are more bytes to be read
      ReadMoreBytes = True
-     while ReadMoreBytes: 
+     while ReadMoreBytes:
           # start with empty bytearray
           del( hashedData )
           hashedData = bytearray()
@@ -180,13 +179,13 @@ else:
                     # no more input
                     F.close()
           else:
-               Text = sys.stdin.read( MaxBytes )
-               hashedData.extend( Text.encode() )
-               if len( Text ) < MaxBytes:
+               InputBytes = sys.stdin.buffer.read( MaxBytes )
+               hashedData.extend( InputBytes )
+               if len( InputBytes ) < MaxBytes:
                     ReadMoreBytes = False
           cryptEncrypt( hashContext, hashedData )
 
-if hashedData:     
+if hashedData:
      # end the operation with null bytes input
      if hashedData:
           cryptEncrypt( hashContext, nullData )
@@ -195,17 +194,16 @@ if hashedData:
 
      # the hashvalue needs a minimum of 20 Bytes
      hashvalue = bytearray( b' '*HashSize )
-     num =  cryptGetAttributeString( hashContext, CRYPT_CTXINFO_HASHVALUE, hashvalue ) 
+     num =  cryptGetAttributeString( hashContext, CRYPT_CTXINFO_HASHVALUE, hashvalue )
 
      # output
      if num == HashSize:
           if Mode == "base64":
                print ( b64encode( hashvalue ).decode() + "  " + FileName )
-          else:	  
+          else:
                print( hexlify( hashvalue ).decode() + "  " + FileName )
 
 cryptDestroyContext( hashContext )
 
 cryptEnd()
 sys.exit( OK )
-

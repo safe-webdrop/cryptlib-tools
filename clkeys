@@ -2,7 +2,7 @@
 
 """
 * File: clkeys
-* Version  : 1.0
+* Version  : 1.1
 * License  : BSD-3-Clause
 *
 * Copyright (c) 2023 - 2025
@@ -38,7 +38,6 @@
 import sys, os, re
 from binascii import *
 
-# error return codes
 ERR_CL         = -1
 OK             = 0
 ERR_USE        = 1
@@ -53,7 +52,7 @@ ERR_INCOMPLETE = 11
 Mode              = "generate"
 MinPasswordLength = 8
 MaxPasswordLength = 64
-Version           = "1.0"
+Version           = "1.1"
 KeyFileName       = "./rsakeyfile.p15"
 CertFileName      = "./certificate.pem"
 CSRFileName       = "./CSR"
@@ -69,7 +68,7 @@ Name              = bytearray()
 KeyFile           = bytearray()
 Password          = bytearray()
 
-CertDN = bytearray()
+CertDN       = bytearray()
 CertCOUNTRY  = "."
 CertSP       = "."
 CertLOCALITY = "."
@@ -77,22 +76,21 @@ CertORG      = "."
 CertOU       = "."
 CertNAME     = "."
 CertEMAIL    = "."
-BINARY = False
+BINARY       = False
+regex        = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'
 
-regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'
-     
 try:
      from cryptlib_py import *
 except:
      ERR_IMPORT = """
-     The python3 library is not installed. You need to install
-     the packages cryptlib-python3 and cryptlib.
+     The python3 library is not installed. You need to install the packages cryptlib-python3 and cryptlib.
      You will find them for a variety of operating systems here:
             https://senderek.ie/cryptlib
      or in the Fedora repository.
      """
      print( ERR_IMPORT )
      exit( ERR_INSTALL )
+
 
 #-----------------------------------------------------------#
 def unix (command) :
@@ -108,6 +106,9 @@ ASKPASS = "/bin/systemd-ask-password"
 if not os.path.isfile(ASKPASS) :
      print ("Error: Please install " + ASKPASS + " to ensure safe password input")
      exit(ERR_INSTALL)
+
+
+
 
 #-----------------------------------------------------------#
 def get_random_bytes ( num ):
@@ -129,18 +130,17 @@ def get_random_bytes ( num ):
 def clean():
      global privKeyContext
      global cryptKeyset
-     global Password
      try:
-          Password = get_random_bytes( len(Password) )
           cryptKeysetClose( cryptKeyset )
-          cryptDestroyContext( privKeyContext )
+          if not (Mode == "import"):
+               cryptDestroyContext( privKeyContext )
           cryptEnd()
      except:
           pass
 
 #-----------------------------------------------------------#
 def write_CSR(buff, pathname):
-     # writes an encrypted bytearray into a file
+     # writes a bytearray into a file
      try:
           F = open(pathname,'w')
           F.write("-----BEGIN CERTIFICATE REQUEST-----\n")
@@ -163,7 +163,7 @@ def write_CSR(buff, pathname):
 #-----------------------------------------------------------#
 def collect_attributes():
      global CertCOUNTRY, CertSP, CertLOCALITY, CertORG, CertOU, CertNAME, CertEMAIL
-     
+
      intro = """
 You are about to be asked to enter information that will be incorporated
 into your certificate request.
@@ -180,25 +180,26 @@ A country name, a common name and an email address are mandatory.
      CertORG      = sanitize( input( "Organization Name (eg, company)    " ))
      CertOU       = sanitize( input( "Organizational Unit Name           " ))
      CertNAME     = Name.decode() + sanitize( input( "Common Name (enter YOUR name)      " + Name.decode() ))
-     CertEMAIL    = sanitize( input( "SAN: Email Address                 " )) 	       
+     CertEMAIL    = sanitize( input( "SAN: Email Address                 " ))
 
 #-----------------------------------------------------------#
 def sanitize(data):
-     forbidden = "!\"§$%()[]{}=?*+~,<>|\\"
+     forbidden = "!\"§$%()[]{}=?*+~,<>\\"
      good = ""
      for i in range(len(data)) :
           if (data[i] not in forbidden) and (ord(data[i]) < 128):
-               good = good + data[i]
+               good += data[i]
      return good
-#-----------------------------------------------------------#
 
+#-----------------------------------------------------------#
 def readCertificateFromFile( FileName, Header ):
+     global BINARY
+
      Header = Header + "-----"
-     F = open( sys.argv[2], "rb" )
+     F = open( FileName, "rb" )
      data = F.read()
      F.close()
 
-     global BINARY
      start = end = 0
      BEGIN = bytearray(b'-----BEGIN ')
      BEGIN.extend(Header.encode())
@@ -232,7 +233,7 @@ def readCertificateFromFile( FileName, Header ):
                begin = True
           # hit first -
           j = 0
-          while ((j < (len(END) -1)) and begin and (i < Length)) :
+          while ((j < (len(END) )) and begin and (i < Length)) :
                if (data[i] != END[j]) :
                    begin = False
                i = i + 1
@@ -246,6 +247,7 @@ def readCertificateFromFile( FileName, Header ):
                     ASCII.append( data[i] )
                     j = j + 1
                     i = i + 1
+     BINARY = False
      if ( (start == 0) and (end == 0) ) :
           # data is probably binary input string
           BINARY = True
@@ -257,6 +259,36 @@ def readCertificateFromFile( FileName, Header ):
                i = i + 1
 
      return ASCII
+
+#-----------------------------------------------------------#
+def get_asn1 (FileName):
+     # returns a string
+     L = ""
+     try:
+          L = unix( "/bin/dumpasn1 -z " + FileName )
+     except:
+          print("Cannot read keyset file " + FileName)
+          exit ( ERR_PERM )
+     return L
+
+#-----------------------------------------------------------#
+def get_DN_from_keyset (FileName):
+     # The file must contain an ASN1 structure of a Cryptlib-generated keyset
+     # returns String
+     DN = ""
+     try:
+          L = unix( "/bin/dumpasn1 -z " + FileName ).split('\n')
+          if "pkcs15content" in L[1]:
+               DNLine = L[10]
+               if "UTF8String" in DNLine:
+                    pos = DNLine.find("UTF8String ")
+                    DN = DNLine[pos+12:-1]
+                    if DN:
+                         return DN
+     except:
+          print("Cannot read keyset file " + FileName)
+     return DN
+
 #-----------------------------------------------------------#
 
 if ( len(sys.argv) >= 2 ):
@@ -274,15 +306,22 @@ if ( len(sys.argv) >= 2 ):
      elif "casign" in sys.argv :
           Mode = "casign"
           sys.argv.remove( "casign" )
+     elif "list" in sys.argv :
+          Mode = "list"
+          sys.argv.remove( "list" )
      else:
-          print("You need to specify an operation: generate or request or import or casign")
+          print("You need to specify an operation: generate or request or import or casign or list")
           exit( ERR_USE )
 
-     if  "-DSA" in sys.argv  :
+     if  "-DSA" in sys.argv :
           ALGO = "DSA"
           sys.argv.remove( "-DSA" )
 else:
-     print( "usage: clkeys generate [-DSA] KeysetName [-SIZE RSABits] [-CN YourName] | request KeysetName [-CN YourName] | import KeysetName CertFile | casign CAKeysetName RequestFile" )
+     print( "usage: clkeys generate [-DSA] KeysetName [-SIZE RSABits] [-CN YourName]" )
+     print( "       clkeys request KeysetName [-CN YourName]")
+     print( "       clkeys import KeysetName CertFile")
+     print( "       clkeys casign CAKeysetName RequestFile")
+     print( "       clkeys list KeysetName")
      exit(ERR_USE)
 
 # all modes are processed
@@ -291,7 +330,8 @@ if Mode == "generate":
      if ALGO == "RSA":
           print ("Generating a RSA key pair.")
      if ALGO == "DSA":
-           print ("Generating a DSA key pair.")
+          print ("Generating a DSA key pair.")
+
 if Mode == "request":
      print ("Writing a CertificateSigningRequest for a RSA key pair.")
 
@@ -303,48 +343,66 @@ if Mode == "casign":
 
 if len(sys.argv) >= 2 :
      SafeKeysetName = sanitize( sys.argv[1] )
+     # allow the Keyset name to end in ".p15" on the command line
      if len( SafeKeysetName) < 2 :
           print("The keyset name is invalid.")
           exit( ERR_USE )
 
-     KeyFileName  = SafeKeysetName + ".p15"
-     KeyBaseName  = SafeKeysetName + ".base.p15" 
-     # check if keysetfile exists
+     if SafeKeysetName[-4:] == ".p15" :
+          KeyFileName  = SafeKeysetName
+          KeyBaseName  = SafeKeysetName[:-4] + ".base.p15"
+     else:
+          KeyFileName  = SafeKeysetName + ".p15"
+          KeyBaseName  = SafeKeysetName + ".base.p15"
+
+     # check if keyset file exists
      if os.path.isfile (KeyFileName):
           KeyFileExists = True
           if Mode == "generate":
                print( "The keyfile " + KeyFileName + " exists. Please rename or remove it." )
                exit( ERR_USE )
           else:
-               if os.path.getsize(SafeKeysetName + ".p15") < 100 :
+               if os.path.getsize(KeyFileName) < 100 :
                     print( "There is a keyset named " + KeyFileName +" but it is not a valid keyset file." )
                     print( "Please use generate to create a new keyset or use a different name." )
                     exit( ERR_CORRUPT )
      else:
-         # request, import and casign need an existing keyset
-         if (Mode == "request") or (Mode == "import") or (Mode == "casign"):
+         # request, import, casign and list need an existing keyset
+         if (Mode == "request") or (Mode == "import") or (Mode == "casign") or (Mode == "list"):
               print( "There is no keyset named " + KeyFileName )
               exit( ERR_USE )
 
-     Name.extend( SafeKeysetName.encode() )
+     if SafeKeysetName[-4:] == ".p15" :
+          Name.extend( SafeKeysetName[:-4].encode() )
+     else:
+          Name.extend( SafeKeysetName.encode() )
      KeyFile.extend( KeyFileName.encode() )
 
      if Mode == "generate":
-          CertFileName = SafeKeysetName + ".cert.pem"
+          if SafeKeysetName[-4:] == ".p15" :
+               CertFileName = SafeKeysetName[:-4] + ".cert.pem"
+          else:
+               CertFileName = SafeKeysetName + ".cert.pem"
           print( "Storing keys in the file " + KeyFileName + " and " + CertFileName )
+
      if Mode == "request":
-          CSRFileName = SafeKeysetName + ".CSR"
+          if SafeKeysetName[-4:] == ".p15" :
+               CSRFileName = SafeKeysetName[:-4] + ".CSR"
+          else:
+               CSRFileName = SafeKeysetName + ".CSR"
           print( "Using existing keys in the keyset file " + KeyFileName + " and storing the new request in " + CSRFileName + ".pem" )
      if Mode == "import":
           print( "Importing a certificate into keyset " + KeyFileName )
-     
+
      if Mode == "casign":
           print( "Using the keyset " + KeyFileName + " with the CA private key and CA certificate")
 
+     if Mode == "list":
+          print ("Listing the ASN1 structure of the keyset " + KeyFileName + ".")
 
      if (len (sys.argv) >= 3) and ((Mode == "generate") or (Mode == "request")) :
           # check -SIZE
-          if ((sys.argv[2] == "-SIZE") or (sys.argv[2] == "-size")) and (Mode == "generate"):
+          if ((sys.argv[2] == "-SIZE") or (sys.argv[2] == "-size")) and (Mode == "generate") :
                # read RSA bits
                try:
                     RSABits = int( sys.argv[3] )
@@ -352,19 +410,19 @@ if len(sys.argv) >= 2 :
                     sys.argv.pop(2)
                     print("RSABits is set to : " + str(RSABits))
                     if ( (RSABits < MinRSABits) or (RSABits > MaxRSABits) ) :
-                         print( "RSABits must be greater than " + str(MinRSABits) + " but not exceed " + str(MaxRSABits)  )
+                         print( "RSABits must be greater than " + str(MinRSABits) + " but not exceed " + str(MaxRSABits) )
                          exit( ERR_SIZE )
                except ValueError:
                     print( "Illegal RSABits " + str(sys.argv[3]) )
                     exit( ERR_BITS )
 
-          if len(sys.argv) >= 3 and ((sys.argv[2] != "-CN") and (sys.argv[2] != "-cn")):
+          if len(sys.argv) >= 3 and ((sys.argv[2] != "-CN") and (sys.argv[2] != "-cn")) :
                # illegal parameter at pos 2, remove it silently
                sys.argv.pop(2)
 
           if len(sys.argv) >= 3 and (sys.argv[2] == "-CN" or sys.argv[2] == "-cn"):
 	       # overwrite Name with the new Common Name
-               if len(sys.argv) > 3:
+               if len(sys.argv) > 3 :
                     i = 3
                     Name = bytearray()
                     Name.extend( sanitize(sys.argv[i]).encode() )
@@ -372,14 +430,14 @@ if len(sys.argv) >= 2 :
                          i += 1 
                          Name.extend( " ".encode() )
                          Name.extend( sanitize(sys.argv[i]).encode() )
-     print("Using the KEYID \'" + Name.decode() + "\'")
-                         
-     if (Mode == "import") or (Mode == "casign"):
+          print("Using the KEYID \'" + Name.decode() + "\'")
+
+     if (Mode == "import") or (Mode == "casign") :
           if (len(sys.argv) >= 3) :
                # process a cert file name
                try:
                     # read the certificate file
-                    if (Mode == "import"):
+                    if (Mode == "import") :
                          ImportCert = readCertificateFromFile(sys.argv[2], "CERTIFICATE")
                     if (Mode == "casign") :
                          ImportCert = readCertificateFromFile(sys.argv[2], "CERTIFICATE REQUEST")
@@ -393,7 +451,11 @@ if len(sys.argv) >= 2 :
                print( "You need to use a file name for the certificate or request." )
                exit( ERR_USE )
 else:
-     print( "usage: clkeys generate [-DSA] KeysetName [-SIZE RSABits] [-CN YourName] | request KeysetName [-CN YourName] | import KeysetName CertFile | casign CAKeysetName RequestFile" )
+     print( "usage: clkeys generate [-DSA] KeysetName [-SIZE RSABits] [-CN YourName]")
+     print( "       clkeys request KeysetName [-CN YourName]")
+     print( "       clkeys import KeysetName CertFile")
+     print( "       clkeys casign CAKeysetName RequestFile")
+     print( "       clkeys list KeysetName")
      exit(ERR_USE)
 
 
@@ -410,27 +472,33 @@ try:
      Minor = cryptGetAttribute(CRYPT_UNUSED, CRYPT_OPTION_INFO_MINORVERSION)
      Step  = cryptGetAttribute(CRYPT_UNUSED, CRYPT_OPTION_INFO_STEPPING)
      CryptlibVersion = str(Major)+"."+str(Minor)+"."+str(Step)
-     print( "clkeys uses Cryptlib version " + CryptlibVersion + "\n")  
-     
+     print( "clkeys " + Version + " uses Cryptlib version " + CryptlibVersion + "\n")
+
+     if (Mode == "list") :
+          ASN1 = get_asn1 (KeyFileName)
+          print(ASN1)
+          # nothing to clean !
+          exit(OK)
+
      if ( (Mode == "generate") ) :
-          # create a FILE keyset
+          # create a new FILE keyset
           cryptKeyset_Object = cryptKeysetOpen( cryptUser, CRYPT_KEYSET_FILE, KeyFile, CRYPT_KEYOPT_CREATE )
           cryptKeyset = int( cryptKeyset_Object )
-          
+
           # generate a key pair into the keyset
-          if ALGO == "RSA":
+          if ALGO == "RSA" :
                privKeyContext_Object = cryptCreateContext( cryptUser, CRYPT_ALGO_RSA )
                privKeyContext  = int ( privKeyContext_Object )
-     
+
           if ALGO == "DSA":
                privKeyContext_Object = cryptCreateContext( cryptUser, CRYPT_ALGO_DSA )
                privKeyContext  = int ( privKeyContext_Object )
-     
+
           cryptSetAttributeString( privKeyContext, CRYPT_CTXINFO_LABEL, Name )
-          if ALGO == "RSA":
+          if ALGO == "RSA" :
                cryptSetAttribute( privKeyContext, CRYPT_CTXINFO_KEYSIZE, int( RSABits/8 ) )
           cryptGenerateKey( privKeyContext )
-             
+
           # get a password to encrypt the private key
           print("Please enter the password used to protect the private key: ")
           Password.extend( unix(ASKPASS).encode() )
@@ -444,54 +512,49 @@ try:
                print ("Error: Your password must have at least " + str(MinPasswordLength) + " characters. Nothing done.")
                clean()
                exit (ERR_PASSWORD)
-    
-     
-          # extract the public key from the context 
-          pubKey_Object = cryptGetPublicKey( cryptKeyset, CRYPT_KEYID_NAME, Name )
-          pubKey = int (pubKey_Object)
-          
+
           # selfsign a simplified Certificate
-          cryptCertificate_Object = cryptCreateCert(  cryptUser, CRYPT_CERTTYPE_CERTIFICATE )
+          cryptCertificate_Object = cryptCreateCert( cryptUser, CRYPT_CERTTYPE_CERTIFICATE )
           cryptCertificate = int (cryptCertificate_Object)
           cryptSetAttribute( cryptCertificate, CRYPT_CERTINFO_SUBJECTPUBLICKEYINFO, privKeyContext )
           cryptSetAttribute( cryptCertificate, CRYPT_CERTINFO_XYZZY, 1)
           cryptSetAttributeString( cryptCertificate, CRYPT_CERTINFO_COMMONNAME, Name )
           cryptSignCert( cryptCertificate, privKeyContext )
-          
-          if False:
-	       # do not add the selfsiged certificate, use import to add it to the keyset
-               cryptAddPublicKey( cryptKeyset, cryptCertificate )
-          
+
+          # do not add the selfsiged certificate, use import to add it to the keyset
           # export the selfsigned certificate
-          
+
           certFormatType = CRYPT_CERTFORMAT_TEXT_CERTIFICATE
-          certMaxLength = cryptExportCert( None, 0, certFormatType, cryptCertificate)
+          certMaxLength = cryptExportCert( None, 0, certFormatType, cryptCertificate )
           EncodedCert = bytearray(b' '*certMaxLength)
           print ("\nCertLength: " + str(certMaxLength) + " bytes")
           cryptExportCert( EncodedCert, certMaxLength, certFormatType, cryptCertificate )
           print(EncodedCert.decode())
-     
-          # write cert to file 
+
+          # write cert to file
           F = open (CertFileName,"bw")
           F.write(EncodedCert)
           F.close()
           unix("chmod 600 '" + CertFileName + "'")
-          
-	  # write KEYID to file 
+
+	  # write KEYID to file
           F = open (KeyFileName + ".KEYID","bw")
           F.write( Name )
           F.close()
-     
+
+          cryptKeysetClose( cryptKeyset )
+          unix("/bin/cp " + KeyFileName + " " + KeyBaseName )
+
      if (Mode == "request") :
           try:
                cryptKeyset_Object = cryptKeysetOpen( cryptUser, CRYPT_KEYSET_FILE, KeyFile, CRYPT_KEYOPT_READONLY )
                cryptKeyset = int( cryptKeyset_Object )
           except CryptException as e :
-               status, message = e.args 
+               status, message = e.args
                if status == CRYPT_ERROR_BADDATA :
                     print( "Error: The keyset file " + KeyFile.decode() + " cannot be used. It may be corrupted." )
-               exit( ERR_CORRUPT )		    
-	       
+               exit( ERR_CORRUPT )
+
           # get the public key
           try:
                pubKey_Object = cryptGetPublicKey( cryptKeyset, CRYPT_KEYID_NAME, Name )
@@ -500,46 +563,55 @@ try:
                status, message = e.args
                if status == CRYPT_ERROR_NOTFOUND :
                     print( "Error: You are using the wrong KEYID, please use -DN YourName instead." )
+                    Owner = get_DN_from_keyset (KeyFile.decode())
+                    if Owner :
+                         print( "       Found the key-owner name " + Owner + " in the keyset file" )
                     clean()
-                    exit( ERR_CORRUPT ) 
-          
+                    exit( ERR_CORRUPT )
+
           # get the private key
           print("Please enter the password that you use to protect the private key: ")
           Password.extend( unix(ASKPASS).encode() )
           if len( Password ) >= MinPasswordLength and len( Password ) <= MaxPasswordLength :
                Password = Password[:-1]
                try:
-                    privKeyContext_Object = cryptGetPrivateKey(cryptKeyset, CRYPT_KEYID_NAME, Name, Password) 
+                    privKeyContext_Object = cryptGetPrivateKey(cryptKeyset, CRYPT_KEYID_NAME, Name, Password)
                     privKeyContext = int( privKeyContext_Object )
                except CryptException as e :
                     status, message = e.args
-                    print(status)
+                    # randomize password buffer as it is no longer needed
+                    Password = get_random_bytes( len(Password) )
+                    del Password
                     if status == CRYPT_ERROR_WRONGKEY :
                          print( "Error: You have entered the wrong password. Private key is unavailable." )
                          clean()
-                         exit( ERR_PASSWORD ) 
+                         exit( ERR_PASSWORD )
                     elif status == CRYPT_ERROR_NOTFOUND :
                          print( "Error: You are using the wrong KEYID, please use -DN YourName instead." )
+                         Owner = get_DN_from_keyset (KeyFile.decode()) 
+                         if Owner :
+                              print( "       Found the key-owner name " + Owner + " in the keyset file" )
                          clean()
-                         exit( ERR_PASSWORD ) 
+                         exit( ERR_PASSWORD )
 
                # randomize password buffer as it is no longer needed
                Password = get_random_bytes( len(Password) )
                del Password
           else:
                print ("Error: Your password must have at least " + str(MinPasswordLength) + " characters. Nothing done.")
+               Password = get_random_bytes( len(Password) )
                clean()
                exit (ERR_PASSWORD)
-    
+
 	  # create a CertificateSigningRequest
           CertRequest_Object = cryptCreateCert(  cryptUser, CRYPT_CERTTYPE_CERTREQUEST )
           CertRequest = int( CertRequest_Object )
           cryptSetAttribute( CertRequest, CRYPT_CERTINFO_SUBJECTPUBLICKEYINFO, pubKey )
-               
+
           # add DN info
           collect_attributes()
 
-          if ( not re.fullmatch(regex, CertEMAIL) ):
+          if ( not re.fullmatch(regex, CertEMAIL) ) :
                print( "The email address \"" + CertEMAIL + "\" is invalid!" )
                clean()
                exit ( ERR_INCOMPLETE )
@@ -548,12 +620,12 @@ try:
                print( "You need to enter a common name and a valid email address!" )
                clean()
                exit ( ERR_INCOMPLETE )
-          
+
           if CertCOUNTRY == "." or len(CertCOUNTRY) != 2 :
                print("Please provide a correct country code")
                clean()
                exit(ERR_INCOMPLETE)
-          
+
           # set the minimal required fields
           cryptSetAttributeString( CertRequest, CRYPT_CERTINFO_COUNTRYNAME, bytearray(CertCOUNTRY.encode()) )
           cryptSetAttributeString( CertRequest, CRYPT_CERTINFO_COMMONNAME, bytearray(CertNAME.encode()) )
@@ -570,11 +642,11 @@ try:
 
           if CertSP != "." and CertSP :
                cryptSetAttributeString( CertRequest, CRYPT_CERTINFO_STATEORPROVINCENAME, bytearray(CertSP.encode()) )
-         
-          try:	 
+
+          try:
                cryptSetAttributeString( CertRequest, CRYPT_CERTINFO_EMAIL, bytearray(CertEMAIL.encode()) )
           except CryptException as e :
-               status, message = e.args  
+               status, message = e.args
                if status == CRYPT_ERROR_PARAM4 :
                     print( "Error: You need to enter a valid email address!" )
                     clean()
@@ -583,11 +655,11 @@ try:
           try:
                cryptSignCert( CertRequest, privKeyContext )
           except CryptException as e :
-               status, message = e.args  
+               status, message = e.args
                if status == CRYPT_ERROR_NOTINITED :
                     print( "Error: You need to enter at least a country name, a common name." )
                     clean()
-                    exit( ERR_INCOMPLETE ) 	       
+                    exit( ERR_INCOMPLETE )
 
           requestMaxLength = cryptExportCert( None, 0, CRYPT_CERTFORMAT_CERTIFICATE, CertRequest )
           EncodedCSR = bytearray(b' '*requestMaxLength)
@@ -598,7 +670,7 @@ try:
           print( "Writing the certificate signing request to the file " + CSRFileName+".pem ." )
           write_CSR(EncodedCSR, CSRFileName+".pem")
 
-	  # also write the binary content to 
+	  # also write the binary content to
           F = open (CSRFileName+".der","bw")
           F.write(EncodedCSR)
           F.close()
@@ -612,20 +684,20 @@ try:
                cryptKeyset_Object = cryptKeysetOpen( cryptUser, CRYPT_KEYSET_FILE, KeyFile, CRYPT_KEYOPT_NONE )
                cryptKeyset = int( cryptKeyset_Object )
           except CryptException as e :
-               status, message = e.args 
+               status, message = e.args
                if status == CRYPT_ERROR_BADDATA :
                     print( "Error: The keyset file " + KeyFile.decode() + " cannot be used. It may be corrupted." )
-               exit( ERR_CORRUPT )		    
+               exit( ERR_CORRUPT )
 
-          # Update the keyset with the certificate 
-          try:      
-               cryptAddPublicKey( cryptKeyset, cryptCertificate ) 
+          # Update the keyset with the certificate
+          try:
+               cryptAddPublicKey( cryptKeyset, cryptCertificate )
                print ("The certificate has been imported successfully.")
           except CryptException as e :
                status, message = e.args
                if status == CRYPT_ERROR_PARAM2 :
                     print( "Error: there isn’t already a matching private key present in the keyset" )
-               elif status == CRYPT_ERROR_DUPLICATE : 
+               elif status == CRYPT_ERROR_DUPLICATE :
                     print( "This certificate is already imported in the keyset " + KeyFileName )
                else:
                     print( "Error ... " + message )
@@ -636,37 +708,40 @@ try:
 
           try:
                cryptCertRequest_Object = cryptImportCert( ImportCert, cryptUser )
-               cryptCertRequest = int( cryptCertRequest_Object )
+               CertRequest = int( cryptCertRequest_Object )
           except CryptException as e :
                status, message = e.args
                if status == CRYPT_ERROR_BADDATA :
                     print( "Error: The request is probably corrupt." )
-                    clean()
+                    cryptDestroyContext( CertRequest )
+                    cryptEnd()
                     exit( ERR_CORRUPT )
           try: 
-               cryptCheckCert( cryptCertRequest, cryptUser )
+               cryptCheckCert( CertRequest, cryptUser )
           except CryptException as e :
                status, message = e.args
                if status == CRYPT_ERROR_BADDATA :
                     print( "Error: The request is probably corrupt." )
-                    clean()
+                    cryptDestroyContext( CertRequest )
+                    cryptEnd()
                     exit( ERR_CORRUPT )
 
           # make sure, that the correct KEYID is being used
           KEYIDFileName = KeyFile.decode() + ".KEYID"
           if  os.path.isfile(KEYIDFileName) :
-               KeyIDContent = bytearray()
-               F = open (KEYIDFileName, "rb")
-               KeyIDContent = F.read()
-               if len(KeyIDContent) != 0:
-                    Name = KeyIDContent
+               KeyIDContent = ""
+               F = open (KEYIDFileName, "r")
+               KeyIDContent = F.read().strip()
+               if len(KeyIDContent) != 0 :
+                    Name.clear()
+                    Name.extend ( KeyIDContent.encode() )
                     print( "Using the KEYID \'" + Name.decode() + "\' from file " + KEYIDFileName )
                F.close()
 
           cryptCertificate_Object = cryptCreateCert( cryptUser, CRYPT_CERTTYPE_CERTIFICATE )
           cryptCertificate = int( cryptCertificate_Object )
-          cryptSetAttribute( cryptCertificate,  CRYPT_CERTINFO_CERTREQUEST, cryptCertRequest )
-          
+          cryptSetAttribute( cryptCertificate,  CRYPT_CERTINFO_CERTREQUEST, CertRequest )
+
           try:
                cryptKeyset_Object = cryptKeysetOpen( cryptUser, CRYPT_KEYSET_FILE, KeyFile, CRYPT_KEYOPT_READONLY )
                cryptKeyset = int( cryptKeyset_Object )
@@ -674,25 +749,32 @@ try:
                status, message = e.args 
                if status == CRYPT_ERROR_BADDATA :
                     print( "Error: The keyset file " + KeyFile.decode() + " cannot be used. It may be corrupted." )
+               clean()
                exit( ERR_CORRUPT )
-          
+
 	  # read the CA signing key from the keyset
           print("Please enter the password that you use to protect the private key: ")
           Password.extend( unix(ASKPASS).encode() )
           if len( Password ) >= MinPasswordLength and len( Password ) <= MaxPasswordLength :
                Password = Password[:-1]
                try:
-                    privKeyContext_Object = cryptGetPrivateKey(cryptKeyset, CRYPT_KEYID_NAME, Name, Password) 
+                    privKeyContext_Object = cryptGetPrivateKey(cryptKeyset, CRYPT_KEYID_NAME, Name, Password)
                     privKeyContext = int( privKeyContext_Object )
                except CryptException as e :
                     status, message = e.args
-                    ### print(status)
+                    # randomize password buffer as it is no longer needed
+                    Password = get_random_bytes( len(Password) )
+                    del Password
                     if status == CRYPT_ERROR_WRONGKEY :
                          print( "Error: You have entered the wrong password. The CA private key is unavailable." )
                          clean()
                          exit( ERR_PASSWORD )
                     elif status == CRYPT_ERROR_NOTFOUND :
-                         print( "Error: The KEYID is incorrect. The CA private key is unavailable." )
+                         print( "Error: The KEYID " + Name.decode() + " is incorrect! The CA private key is unavailable." )
+                         Owner = get_DN_from_keyset (KeyFile.decode())
+                         if Owner :
+                              print( "       Found the CA key-owner name " + Owner + " in the keyset file" )
+                              print( "       Please make sure that a proper KEYID file is present for this CA key." )
                          clean()
                          exit( ERR_USE )
 
@@ -701,11 +783,12 @@ try:
                del Password
           else:
                print ("Error: Your password must have at least " + str(MinPasswordLength) + " characters. Nothing done.")
+               Password = get_random_bytes( len(Password) )
                clean()
                exit (ERR_PASSWORD)
 
           # show the DN to be signed ...
-          print()	  
+          print()
           DNList = [CRYPT_CERTINFO_COMMONNAME, CRYPT_CERTINFO_EMAIL, CRYPT_CERTINFO_COUNTRYNAME, CRYPT_CERTINFO_STATEORPROVINCENAME, CRYPT_CERTINFO_LOCALITYNAME, CRYPT_CERTINFO_ORGANISATIONNAME, CRYPT_CERTINFO_ORGANISATIONALUNITNAME]
           DNLabel = ["CN = ", "emailAddress = ", "C  = ", "SP = ", "L  = ",  "O  = ", "OU = "]
           i = 0
@@ -731,10 +814,11 @@ try:
                      print(status)
                      if status == CRYPT_ERROR_PARAM2 :
                           print( "Error: The keyset file " + KeyFile.decode() + " may not contain the selfsigend certificate." )
-                          print( "       Please make sure that the CA certificate is imported." )
+                          print( "       Please make sure that the CA certificate is imported! " )
+                     clean()
                      exit( ERR_CORRUPT )
 
-          
+
                # export the new certificate
                CertMaxLength = cryptExportCert( None, 0, CRYPT_CERTFORMAT_CERTIFICATE, cryptCertificate )
                EncodedCert = bytearray(b' '*CertMaxLength)
@@ -747,9 +831,9 @@ try:
                EncodedCert = bytearray(b' '*certMaxLength)
                print ("\nText Length: " + str(certMaxLength) + " bytes:\n")
                cryptExportCert( EncodedCert, certMaxLength, certFormatType, cryptCertificate )
-              
+
                print(EncodedCert.decode())
-     
+
                # write cert to file 
                F = open (NewCertFileName,"bw")
                F.write(EncodedCert)
@@ -758,33 +842,25 @@ try:
           else:
                print("Nothing done.")
 
-     # destroy all contexts
-     if not ((Mode == "import") or (Mode == "casign")) :
-          cryptDestroyContext( pubKey )
-          cryptDestroyContext( privKeyContext )
-     else:
-          cryptDestroyContext( cryptCertificate )
-     if (Mode == "casign"):	  
-          cryptDestroyContext( cryptCertRequest )
-          cryptDestroyContext( privKeyContext )
 
-     cryptKeysetClose( cryptKeyset )
-     if (Mode == "generate") :
-          unix("cp " + KeyFileName + " " + KeyBaseName )
-     if (Mode == "generate"):
+     # destroy all contexts
+     if not (Mode == "request") :
           cryptDestroyContext( cryptCertificate )
-    
-     if (Mode == "request"):
+
+     if (Mode == "request") :
+          cryptDestroyContext( pubKey )
+
+     if (Mode == "casign") or (Mode == "request"):
           cryptDestroyContext( CertRequest )
 
      # normal clean up
+     # destroy cryptKeyset and privKeyContext
+     # followed by cryptEnd()
      clean()
-     cryptEnd()
 
 except CryptException as e :
      status, message = e.args
      print( "Error ... " + message )
      clean()
-     cryptEnd()
 
 exit(0)
