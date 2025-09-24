@@ -10,6 +10,8 @@
 
 .B clsmime [OPTIONS] verify signed_message [CArootCertificate]
 
+.B clsmime [OPTIONS] list [<NumLines>] MessageFile
+
 .br
 .SH DESCRIPTION
 \fBclsmime\fR encrypts text or binary data with a RSA \fBpublic key\fR stored in a recipients's certificate file.
@@ -41,6 +43,13 @@ generate a detached signature in S/MIME format as multipart/signed
 .br
 (default is a signature including the enclosed text message)
 .TP
+\fB-integritycheck\fR
+forces integrity protection while encrypting data. 
+.br
+The cryptogram is enveloped in a authEnvelopedData object that cannot be decrypted with OpenSSL.
+.br
+Use this option when the output data is processed with \fBclsmime\fR.
+.TP
 \fB\-binary\fR
 do not change the input bytes (default is \fBtext mode\fR)
 
@@ -63,25 +72,31 @@ write the certificate chain to the file system during verification of a S/MIME s
 
 
 \fBMicrosoft Outlook:\fR Use the contacts tab to enter the Common Name and the email address and finally 
-click on the \\'certificate button\\' to import the contact's certificate stored in a *.cer file.
+click on the 'certificate button' to import the contact's certificate stored in a *.cer file.
 
 .TP
 \fBOpenSSL\fR
 
 The following OpenSSL commands can be used to exchange message files with \fBclsmime\fR :\br
 
-\fB Encryption   :\fR openssl smime -encrypt -aes-256-cbc -in message -binary -out message.smime certfile
+.in +4n
+\fB Encryption   :\fR 
+ openssl smime -encrypt -aes-256-cbc -in message -binary -out message.smime certfile
 
-\fB Decryption   :\fR openssl smime -decrypt -in message  -out message.clear -recip cert -inkey RSAkey
+\fB Decryption   :\fR 
+ openssl smime -decrypt -in message  -out message.clear -recip cert -inkey RSAkey
 
-\fB Signing      :\fR openssl smime -sign -in message -text -signer cert -inkey RSAkey -out message.sig
+\fB Signing      :\fR 
+ openssl smime -sign -in message -text -signer cert -inkey RSAkey -out message.sig
 
-\fB Verification :\fR openssl smime -verify -in message -out message.verified -inkey certfile -CAfile CAcert
+\fB Verification :\fR 
+ openssl smime -verify -in message -out message.verified -inkey certfile -CAfile CAcert
+
+.PP
 
 \fBCertChains\fR can be examined with: 
 .br
 sed -i \'s/CERTIFICATE CHAIN/PKCS7/\' certchain ; openssl pkcs7 -in certchain -text -print_certs
-.PP
 
 .SH NOTES
 Full documentation <https://senderek.ie/cryptlib/tools>     
@@ -103,6 +118,9 @@ data from stdin. This program is part of the systemd package.
 .TP
 /usr/bin/systemd-ask-password
 This program is used to provide the passphrase based on a user's input.
+.TP
+/usr/bin/dumpasn1
+This program is used to list the ASN1 structure of output files.
 .TP
 /lib64/libcl.so.3.4.8
 The cryptlib library.

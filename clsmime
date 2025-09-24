@@ -2,7 +2,7 @@
 
 """
 * File: clsmime
-* Version  : 1.0
+* Version  : 1.1
 * License  : BSD-3-Clause
 *
 * Copyright (c) 2023 - 2025
@@ -38,7 +38,6 @@
 import sys, os, re
 from binascii import *
 
-# error return codes
 ERR_CL         = -1
 OK             = 0
 ERR_USE        = 1
@@ -59,21 +58,21 @@ ERR_BADSIG     = 15
 
 DEBUG             = False
 BINARY            = False
+INTEGRITYCHECK    = False
 DETACHEDSIGNATURE = False
 CERTIMPORTED      = False
 SAVECHAIN         = False
 Mode              = "encrypt"
-Source            = "file"
 MessageType       = "text"
 MinPasswordLength = 8
 MaxPasswordLength = 64
-Version           = "1.0"
+Version           = "1.1"
 KeyFileName       = ""
 FileName          = ""
 CertFileName      = ""
 InputBytes        = ""
-MaxBytes          = 150000000
-MaxBufferSize     = MaxBytes + 4000
+MaxBytes          = 268400000             # no more than INT_MAX//8 (pow(2,31)//8)
+MaxBufferSize     = MaxBytes + 32768
 Data              = bytearray()
 KeyFile           = bytearray()
 ImportCert        = bytearray()
@@ -81,13 +80,13 @@ Password          = bytearray()
 Text              = bytearray()
 isMultipart       = False
 HeaderLength      = 28
+NumLines          = 1000
 
 try:
      from cryptlib_py import *
 except:
      ERR_IMPORT = """
-     The python3 library is not installed. You need to install
-     the packages cryptlib-python3 and cryptlib.
+     The python3 library is not installed. You need to install the packages cryptlib-python3 and cryptlib.
      You will find them for a variety of operating systems here:
             https://senderek.ie/cryptlib
      or in the Fedora repository.
@@ -95,11 +94,13 @@ except:
      print( ERR_IMPORT )
      exit( ERR_INSTALL )
 
-
 ASKPASS = "/bin/systemd-ask-password"
 if not os.path.isfile(ASKPASS) :
      print ("Error: Please install " + ASKPASS + " to ensure safe password input")
      exit(ERR_INSTALL)
+
+
+
 
 
 #-------------------------------------------------#
@@ -113,6 +114,7 @@ usage: clsmime [OPTIONS] encrypt MessageFile Certificate
        clsmime [OPTIONS] decrypt EncryptedMessage KeySetFile
        clsmime [OPTIONS] sign    MessageFile KeySetFile
        clsmime [OPTIONS] verify  SignedMessage [CArootCertificate]
+       clsmime list [<num>] MessageFile
        clsmime OPTIONS
 
 The input size is limited to 150 MByte.
@@ -123,6 +125,10 @@ OPTIONS are:
                  (default is a signature containing the text)
      -binary     do not change anything (default is text mode)
                  in text mode all \\n are replaced by \\r\\n and a header is added to the input bytes
+     -integritycheck  
+                 forces integrity protection while encrypting data
+                 the cryptogram is enveloped in a authEnvelopedData object that cannot be decrypted
+                 with OpenSSL
      -help       display this message
      -version    display version information
      -certchain  write the certchain to the file system while verification of signatures
@@ -165,50 +171,39 @@ def print_debug ( message ):
 def get_proper_filename():
      global OutFilename
 
+     # stdin is not a source of data !
      if ( Mode == "encrypt" ) :
-          if (Source == "file") :
-               OutFilename = FileName + ".smime"
-               if (os.path.isfile(OutFilename)) :
-                    RET = input("Overwrite " + OutFilename + " ? [y/n] ")
-                    if (RET !=  "y") :
-                         OutFilename = input("File name to write : ")
-          else:
-               # source is standard input, write to stdin.smime
-               OutFilename = "./stdin.smime"
+          OutFilename = FileName + ".smime"
+          if (os.path.isfile(OutFilename)) :
+               RET = input("Overwrite " + OutFilename + " ? [y/n] ")
+               if (RET !=  "y") :
+                    OutFilename = input("File name to write : ")
      
      elif ( Mode == "decrypt" ) :
-          if (Source == "file") :
-               if (FileName[-6:] == ".smime") :
-                    OutFilename = FileName[:-6]
-               else:
-                    # get a proper file name to write to
-                    OutFilename = input("File name to write : ")
-               if (os.path.isfile(OutFilename)) :
-                    RET = input("Overwrite " + OutFilename + " ? [y/n] ")
-                    if (RET !=  "y") :
-                         OutFilename = input("Filename to write : ")
+          if (FileName[-6:] == ".smime") :
+               OutFilename = FileName[:-6]
+          else:
+               # get a proper file name to write to
+               OutFilename = input("File name to write : ")
+          if (os.path.isfile(OutFilename)) :
+               RET = input("Overwrite " + OutFilename + " ? [y/n] ")
+               if (RET !=  "y") :
+                    OutFilename = input("Filename to write : ")
 
      elif ( Mode == "sign" ) :
-          if (Source == "file") :
-               OutFilename = FileName + ".sig"
-               if (os.path.isfile(OutFilename)) :
-                    RET = input("Overwrite " + OutFilename + " ? [y/n] ")
-                    if (RET !=  "y") :
-                         OutFilename = input("File name to write : ")
-          else:
-               # source is standard input, write to stdin.smime
-               OutFilename = "./stdin.sig"
+          OutFilename = FileName + ".sig"
+          if (os.path.isfile(OutFilename)) :
+               RET = input("Overwrite " + OutFilename + " ? [y/n] ")
+               if (RET !=  "y") :
+                    OutFilename = input("File name to write : ")
      
      if ( Mode == "verify" ) :
-          if (Source == "file") :
-               OutFilename = FileName + ".verified"
-               if (os.path.isfile(OutFilename)) :
-                    RET = input("Overwrite " + OutFilename + " ? [y/n] ")
-                    if (RET !=  "y") :
-                         OutFilename = input("File name to write : ")
-          else:
-               # source is standard input, write to stdin.verified
-               OutFilename = "./stdin.smime"
+          OutFilename = FileName + ".verified"
+          if (os.path.isfile(OutFilename)) :
+               RET = input("Overwrite " + OutFilename + " ? [y/n] ")
+               if (RET !=  "y") :
+                    OutFilename = input("File name to write : ")
+     
      OutFilename = sanitize(OutFilename)
      if len(OutFilename) == 0 :
           print("Please enter a valid file name")
@@ -476,11 +471,11 @@ def clean_envelope():
 
 #-----------------------------------------------------------#
 def sanitize(data):
-     forbidden = "!\"§&$%()[]{}=?*+~,<>|\\"
+     forbidden = "!\"§&$%()[]{}=?*+~,<>\\"
      good = ""
      for i in range(len(data)) :
           if (data[i] not in forbidden) and (ord(data[i]) < 128):
-               good = good + data[i]
+               good += data[i]
      return good
 
 #-----------------------------------------------------------#
@@ -677,7 +672,6 @@ def readCertificateFromFile( FileName, Header ):
                begin = True
           # hit first -
           j = 0
-          #while ((j < (len(END) -1)) and begin and (i < Length)) :
           while ((j < (len(END) )) and begin and (i < Length)) :
                if (data[i] != END[j]) :
                    begin = False
@@ -758,6 +752,10 @@ if ( len(sys.argv) > 1 ):
           BINARY = True
           MessageType = "binary"
           sys.argv.remove( "-binary" )
+     
+     if  "-integritycheck" in sys.argv :
+          INTEGRITYCHECK = True
+          sys.argv.remove( "-integritycheck" )
 
      if  ("-certchain" in sys.argv):
           SAVECHAIN = True
@@ -767,6 +765,16 @@ if ( len(sys.argv) > 1 ):
           SAVECHAIN = True
           sys.argv.remove( "-chain" )
 
+if ( len(sys.argv) >= 2 ):
+     if sys.argv[1] == "list" :
+          Mode = "list"
+          if len(sys.argv) > 2 :
+               # read number of lines to be displayed
+               try:
+                    NumLines = abs( int(sys.argv[2]) )
+                    del(sys.argv[2])
+               except:
+                    pass
 
 if ( len(sys.argv) >= 2 ):
      # legitimate options are in the parameter list
@@ -783,11 +791,18 @@ if ( len(sys.argv) >= 2 ):
      elif "verify" in sys.argv :
           Mode = "verify"
           sys.argv.remove( "verify" )
+     elif "list" in sys.argv :
+          Mode = "list"
+          sys.argv.remove( "list" )
      else:
-          print("You need to specify an operation: encrypt or decrypt or sign or verify")
+          print("You need to specify an operation: encrypt or decrypt or sign or verify or list")
           exit( ERR_USE )
 else:
-     print( "usage: clsmime encrypt MessageFile certificate | decrypt EncryptedMessage KeysetName | sign MessageFile KeysetName | verify SignedMessage [CArootCert] " )
+     print("usage: clsmime encrypt MessageFile certificate")
+     print("       clsmine decrypt EncryptedMessage KeysetName")
+     print("       clsmime sign MessageFile KeysetName")
+     print("       clsmime verify SignedMessage [CArootCert]")
+     print("       clsmime list [<NumLines>] MessageFile")
      exit(ERR_USE)
 
 # all modes are processed
@@ -801,7 +816,7 @@ if len(sys.argv) >= 2 :
                InputBytes = F.read( MaxBytes )
                F.close()
           except:
-               print( "cannot open file " + str(FileName) )
+               print( "Cannot open file " + str(FileName) )
                exit ( ERR_PERM )
 
      else:
@@ -818,7 +833,7 @@ if len(sys.argv) >= 2 :
                exit( ERR_USE )
 
           KeyFileName  = SafeKeysetName + ".p15"
-          # check if keysetfile exists
+          # check if keyset file exists
           if os.path.isfile (KeyFileName):
                if os.path.getsize(KeyFileName) < 100 :
                     print( "There is a keyset named " + KeyFileName +" but it is not a valid keyset file." )
@@ -841,8 +856,12 @@ if len(sys.argv) >= 2 :
                 print( "Cannot read the certificate " + CertFileName + "." )
                 exit( ERR_PERM )
 
-elif (Mode != "verify"):
-     print( "usage: clsmime encrypt MessageFile certificate | decrypt EncryptedMessage KeysetName | sign MessageFile KeysetName | verify SignedMessage [CArootCert] " )
+elif (Mode != "verify") and (Mode != "list"):
+     print("usage: clsmime encrypt MessageFile certificate")
+     print("       clsmine decrypt EncryptedMessage KeysetName")
+     print("       clsmime sign MessageFile KeysetName")
+     print("       clsmime verify SignedMessage [CArootCert]")
+     print("       clsmime list [<NumLines>] MessageFile")
      exit(ERR_USE)
 
 if (Mode == "verify") and (len(sys.argv) >= 2):
@@ -893,6 +912,48 @@ try:
           exit (ERR_CL)
 
 
+#-------LIST----------#
+     if Mode == "list":
+          if NumLines < 1000 :
+               Num = str(NumLines)
+          else:
+               Num = "all"
+          print ("Listing the ASN1 structure of " + FileName + " (" + Num + " lines)\n")
+          if InputBytes:
+               Data.extend( InputBytes )
+          Data = analyze_SMIME_data( Data )
+          
+	  # base64 decode ASCII
+          Buffer = bytearray()
+          if not BINARY:
+               try:
+                    print_debug("Data : " + str(Data[:20].decode()) + " ... " + str(Data[-20:].decode()) + " length : " + str(len(Data)) + " bytes.")
+                    bytestring = a2b_base64( Data )
+                    Buffer.extend(bytestring)
+               except:
+                    print ( "Error: cannot decode message block" )
+                    clean_envelope()
+                    exit (ERR_DECODE)
+          else:
+	       # nothing to decode
+               Buffer = Data
+          
+          # write Buffer into a temporary file
+          from pathlib import Path
+          TempFile = str(Path.home()) + "/.cryptlibtempfile"
+          try:
+               F = open (TempFile, "wb")
+               F.write(Buffer)
+               F.close()
+               unix("/bin/chmod 600 " + TempFile )
+               print( unix("/bin/dumpasn1 -z " + TempFile + " | head -" + str(NumLines)) )
+               unix("/bin/rm -f " + TempFile)
+          except:
+               print("Cannot write to temporary file " + TempFile)
+               exit ( ERR_PERM )
+          exit ( OK )
+
+
 #-------ENCRYPT----------#
      if Mode == "encrypt":
           print ("Encrypting " + FileName + " with " + CertFileName )
@@ -905,10 +966,9 @@ try:
                 cryptSetAttribute( Envelope, CRYPT_ATTRIBUTE_BUFFERSIZE,  MaxBufferSize )
           except CryptException as e :
                status, message = e.args
-               if status != CRYPT_ENVELOPE_RESOURCE :
-                    print( "Error: cannot set BufferSize to " +  str(MaxBufferSize) )
-                    clean_envelope()
-                    exit( ERR_SIZE )
+               print( "Error: cannot set BufferSize to " +  str(MaxBufferSize) )
+               clean_envelope()
+               exit( ERR_SIZE )
  
           # encrypt the input
           if Data :
@@ -923,45 +983,47 @@ try:
                # we only need one pass, no looping required
                print_debug ( "Processing " + str( len( Data ) ) + " bytes of input data")
 
-               # DO NOT force authenticated encryption
-               ### cryptSetAttribute( Envelope, CRYPT_ENVINFO_INTEGRITY, CRYPT_INTEGRITY_FULL )
+               # the default is no full integrity protection as OpenSSL does not recognise it
+               if INTEGRITYCHECK :
+                    # Force authenticated encryption when using clsmime for decryption as well
+                    cryptSetAttribute( Envelope, CRYPT_ENVINFO_INTEGRITY, CRYPT_INTEGRITY_FULL )
 
                # don't read a cert from a p15 file, use the Certfile instead!
                try:
                     cert_Object = cryptImportCert( ImportCert, cryptUser )
                     certificate = int (cert_Object)
+                    cryptSetAttribute( Envelope, CRYPT_ENVINFO_PUBLICKEY, certificate )
+                    cryptSetAttribute( Envelope, CRYPT_ENVINFO_DATASIZE,  len( Data ) )
+                    cryptDestroyContext( certificate )
                except CryptException as e :
                     status, message = e.args
                     if status == CRYPT_ERROR_BADDATA :
                           print( "Error: The user certificate may be corrupt" )
                           clean_envelope()
                           exit( ERR_CORRUPT )
-               cryptSetAttribute( Envelope, CRYPT_ENVINFO_PUBLICKEY, certificate )
-               cryptSetAttribute( Envelope, CRYPT_ENVINFO_DATASIZE,  len( Data ) )
 
                try:
                     bytesCopied = cryptPushData( Envelope, Data )
                except CryptException as e :
                     status, message = e.args
                     if status != CRYPT_ENVELOPE_RESOURCE :
-                          print( "Your message is too large. The limit is " +  str(MaxBufferSize-4000) )
+                          print( "Your message is too large. The limit is " +  str(MaxBufferSize-32768) )
                           clean_envelope()
                           exit( ERR_SIZE )
 
-               print_debug ("Pushed " +str(bytesCopied) + " bytes into the envelope")
+               print_debug ("Pushed " + str(bytesCopied) + " bytes into the envelope")
 
                if len( Data ) != bytesCopied :
-                    # user information and proceed
-                    print ( "Error: message did not fit into the envelope completely." )
+                    # inform user and proceed
+                    print ( "Error: Your message did not fit into the envelope completely." )
 
                try:
                     cryptFlushData( Envelope )
                except CryptException as e :
                     status, message = e.args
-                    if status != CRYPT_ENVELOPE_RESOURCE :
-                          print( "Encryption error: " + message )
-                          clean_envelope()
-                          exit( ERR_ENCRYPT )
+                    print( "Encryption error: " + message )
+                    clean_envelope()
+                    exit( ERR_ENCRYPT )
 
                # randomize cleartext data
                Data = get_random_bytes( len (Data) )
@@ -969,13 +1031,18 @@ try:
                # prepare the cryptogram
                DataBufferSize = MaxBytes
                envelopedData = bytearray( b' ' * DataBufferSize )
-               bytesCopied = cryptPopData( Envelope, envelopedData, DataBufferSize )
-               print_debug ("Retrieved " + str(bytesCopied) + " encrypted bytes from envelope")
-               Buffer = envelopedData[:bytesCopied]
-               # Buffer holds the encrypted data
+               try:
+                    bytesCopied = cryptPopData( Envelope, envelopedData, DataBufferSize )
+                    print_debug ("Retrieved " + str(bytesCopied) + " encrypted bytes from envelope")
+                    Buffer = envelopedData[:bytesCopied]
+                    # Buffer holds the encrypted data
+               except CryptException as e :
+                    status, message = e.args
+                    print( "Encryption error: " + message )
+                    clean_envelope()
+                    exit( ERR_ENCRYPT )
           else:
                print_debug( "Input is too big" )
-               ReadMoreBytes = True
                clean_envelope()
                exit( ERR_SIZE )
 
@@ -1070,6 +1137,7 @@ try:
                                     elif status == CRYPT_ERROR_NOTFOUND :
                                          print( "Error: The private key is unavailable." )
                                          clean_envelope()
+                                         exit (ERR_DECRYPT)
                           else:
                                print ("Error: Your password must have at least " + str(MinPasswordLength) + " characters. Nothing done.")
                                clean_envelope()
@@ -1087,6 +1155,16 @@ try:
                bytesCopied = cryptPopData( Envelope, Cleartext, DataBufferSize )
                print_debug ( str(bytesCopied) + " decrypted bytes retrieved from envelope" )
 
+               try:
+                    # this fails, if there is no integrity protection
+                    Verification = cryptGetAttribute( Envelope, CRYPT_ENVINFO_SIGNATURE_RESULT )
+                    if (Verification == 0) :
+                         print_debug("Full integrity protection found.")
+                    else:
+                         print_debug("No integrity protection. [" + str(Verification) + "]")
+               except:
+                    print_debug("No integrity check available.")
+               
                Cleartext = Cleartext[:bytesCopied]
                # Cleartext holds the decrypted data
 
@@ -1111,10 +1189,9 @@ try:
                cryptSetAttribute( Envelope, CRYPT_ATTRIBUTE_BUFFERSIZE,  MaxBufferSize )
           except CryptException as e :
                status, message = e.args
-               if status != CRYPT_ENVELOPE_RESOURCE :
-                    print( "Cannot set BufferSize to " +  str(MaxBufferSize) )
-                    clean_envelope()
-                    exit( ERR_SIZE )
+               print( "Cannot set BufferSize to " +  str(MaxBufferSize) )
+               clean_envelope()
+               exit( ERR_SIZE )
  
           Buffer = bytearray()
           Buffer.extend(Data)
@@ -1150,7 +1227,6 @@ try:
                          print("Your Keyset file may be corrupted.")
                          clean_envelope()
                          exit( ERR_CORRUPT )
-
 
                try:
                     # find the key-owner's name or ask for it
@@ -1217,7 +1293,7 @@ try:
                               New.append(x)
                     Buffer = New
 
-               print("Signing " + str(len(Buffer)) +" bytes.")
+               print("Signing " + str(len(Buffer)) + " bytes.")
 
                # push Data into envelope
                if ( len(Buffer) > 0 ) :
@@ -1227,7 +1303,6 @@ try:
                          # catch the advisory exception, that the key is still missing
                          status, message = e.args
                          if status != CRYPT_ENVELOPE_RESOURCE :
-                               print(str(status))
                                print( "Signing error while pushing bytes into the envelope. " + message )
                                clean_envelope()
                                exit( ERR_SIGN )
@@ -1267,21 +1342,22 @@ try:
                Signature = Signature[:bytesCopied]
 
                # check, if the signature can be verified
-               print_debug(str(Buffer))
                if not SignatureIsOK(Signature, Buffer):
                     print( "Signature is not OK.")
                     clean_envelope()
                     exit( ERR_SIGN )
+               else:
+                    print_debug( "The signature has been verified." )
+
 
           else:
                print_debug( "Input is too large." )
-               ReadMoreBytes = True
                clean_envelope()
                exit( ERR_SIZE )
 
           if (Signature) :
                # write the signed Buffer into the file system
-               print("Writing "+ str(len(Signature))+" signature bytes to file " + OutFilename)
+               print("Writing " + str(len(Signature)) + " signature bytes to file " + OutFilename)
                if DETACHEDSIGNATURE :
                     # this is the default
                     write_smime_signature(Buffer, Signature , OutFilename)
@@ -1350,10 +1426,10 @@ try:
           if isMultipart :
                # push the text into envelope
                try:
-                    bytesCopied = cryptPushData( Envelope, Text)
-                    print_debug( "Text data pushed successfully : " + str(bytesCopied) + " bytes")
+                    bytesCopied = cryptPushData( Envelope, Text )
+                    print_debug( "Text data pushed successfully : " + str(bytesCopied) + " bytes.")
                     cryptFlushData( Envelope )
-                    print_debug("Text data flushed")
+                    print_debug("Text data flushed.")
                except CryptException as e :
                     status, message = e.args
                     if status == CRYPT_ERROR_BADDATA :
@@ -1375,9 +1451,6 @@ try:
                     clean_envelope()
                     exit( ERR_VERIFY )
                
-               # Cleartext holds the verified data
-               Cleartext = Cleartext[:bytesCopied]
-          
           #  Determine the result of the signature check
           Result = -1
           try:
@@ -1412,7 +1485,7 @@ try:
                          F.close()
                          unix("chmod 600 '" + OutFilename + ".certchain" + "'")
 
-                    # the end-user cert check needs the root CA certificate to proceed, check if it existed
+                    # the end-user cert check needs the root CA certificate to proceed, check if it exists
                     if CERTIMPORTED:
                          try:
                               cert_Object = cryptImportCert( ImportCert, cryptUser )
@@ -1431,13 +1504,13 @@ try:
                               # then check the whole chain
                               cryptCheckCert( CertChain, certificate )
                               CN = bytearray(b' '*80)
-                              cryptGetAttributeString( certificate, CRYPT_CERTINFO_COMMONNAME, CN )
-                              print("Signer certificate verified by " +str(CN[:len(CN)].decode()) + "\n")
+                              CNLength = cryptGetAttributeString( certificate, CRYPT_CERTINFO_COMMONNAME, CN )
+                              print("Signer certificate verified by " +str(CN[:CNLength].decode()) + "\n")
                          except CryptException as e :
                               status, message = e.args
-                              print( "Error using the CA certificate for verification of the end-user certificate")
+                              print( "Error while using the CA certificate to verify the signer\'s certificate")
                               if status == CRYPT_ERROR_INVALID:
-                                   print("Maybe the specified CA cert is not the issuer certificate?")
+                                   print("WARNING: The signer\'s certificate is INVALID. ")
                          cryptDestroyContext( certificate )
                     else:
                          print("Cannot check the validity because the issuer cert is unavailable")
@@ -1450,7 +1523,7 @@ try:
                          write_raw_message(remove_header(Text) , OutFilename)
 
                elif Result == CRYPT_ERROR_BADDATA :
-                    print("Error: The sinature is corrupt")
+                    print("Error: The signature is corrupt")
                     clean_envelope()
                     exit( ERR_CORRUPT )
 
@@ -1462,8 +1535,6 @@ try:
 
           clean_envelope()
           exit( OK )
-
-
 
      # normal clean up
      clean_envelope()

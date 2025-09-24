@@ -1,4 +1,4 @@
-.TH CLAES "1"          "June 2025" "Cryptlib Tools"  "Cryptlib Tools"             CLAES "1"
+.TH CLAES "1"          "August 2025" "Cryptlib Tools"  "Cryptlib Tools"             CLAES "1"
 .SH NAME
 \fBclaes\fR \- conventional encryption tool interoperating with gpg and openssl
 .SH SYNOPSIS
@@ -7,10 +7,10 @@
 .SH DESCRIPTION
 \fBclaes\fR encrypts or decrypts data in OpenPGP format, CMS format and OPENSSL format using files or standard input with a passphrase-based AES cipher.
 If no FILE or "-" is given, data is read from standard input. 
-The size of any input data is limited to 150 MByte.  The default mode of operation is \fBencryption\fR with the ciphertext stored base64-encoded in the OpenPGP format.  To decrypt base64-encoded or binary input data the option "-decrypt" must be used.
+The size of any internal input data is limited to 256 MByte.  The default mode of operation is \fBencryption\fR with the ciphertext stored base64-encoded in the OpenPGP format.  To decrypt base64-encoded or binary input data the option \fB-decrypt\fR must be used.
 
-All input data is processed AS IS and is treated internally as binary data with no changes. For every encryption or decryption a user-provided passphrase is read from the terminal in which claes is run. So claes always works interactively.
-There is deliberately no public-key-cryptography build into claes. If you need those, please use clsmime and clkeys.
+All input data is processed AS IS and is treated internally as binary data with no changes. For every encryption or decryption a user-provided passphrase is read from the terminal in which claes is run. So \fBclaes\fR always works interactively.
+There is deliberately no public-key-cryptography build into claes. If you need those, please use \fBclsmime\fR and \fBclkeys\fR.
 
 .SH OPTIONS
 .PP
@@ -28,14 +28,23 @@ print debugging information to stderr
 produce CMS enveloped and encrypted data instead of OpenPGP (default)
 .TP
 \fB\-openssl\fR    
-produce encrypted data using pbkdf2 in openssl format
+produce encrypted data in openssl format using pbkdf2 for passphrase mangling
 .TP
 \fB\-128\fR        
-forces the use of 128 bit AES keys in conjunction with -openssl\br
-(256 bits is the default)
+forces the use of 128 bit AES keys in conjunction with -openssl
+.br
+(AES 256 bits is the default)
 .TP
 \fB\-decrypt\fR    
 decrypts an encrypted message (default is encrypt)
+.br
+If data is compressed it will be de-compressed automatically
+.TP
+\fB\-binary\fR    
+uses binary data both for input and output
+.TP
+\fB\-compress\fR    
+forces compression before data is encrypted
 .PP
 
 .SH NOTES
@@ -62,20 +71,25 @@ data from stdin. This program is part of the systemd package.
 
 Without any options claes produces OpenPGP (base64-encoded) encrypted messages using AES-128.
 It can decrypt any messages (ascii or binary) produced by GnuPG with the following ciphers:
-AES, AES192, AES256, 3DES and CAST-128.
+AES, AES192, AES256, 3DES and CAST-128. The option "-binary" causes the output written to a
+file with the .gpg extension. As binary output does not compute the CRC24 checksum, it is much
+faster than the default mode and is recommended for the encryption of larger files.
 
-To mangle the password correctly the option --s2k-digest-algo SHA256 must be used with gpg.
+To mangle the password correctly the option \fB--s2k-digest-algo SHA256\fR must be used with gpg.
 
+From version 1.1 an MDC packet is added to every encryption in OpenPGP mode. Integrity protection
+is also used with the CMS format.
 .TP
 \fBopenssl\fR
 
-In OpenSSL mode claes writes (base64-encoded) encrypted messages in the proprietary OpenSSL format using AES256 as the default.
+In OpenSSL mode claes writes encrypted messages in the proprietary OpenSSL format using AES256 as the default.
 
 These messages can be decrypted with openssl :\br
 \fB      openssl aes-256-cbc -pbkdf2 -d -a -in FILE.asc \fR
 
 The use of AES-128 can be forced by the additional option -128 both for encryption or decryption of OpenSSL messages.
 
+There is no compression available in OpenSSL mode.
 .TP
 \fBCMS\fR
 
