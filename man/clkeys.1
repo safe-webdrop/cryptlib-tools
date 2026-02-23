@@ -1,4 +1,4 @@
-.TH CLKEYS "1"          "June 2025" "Cryptlib Tools"  "Cryptlib Tools"             CLKEYS "1"
+.TH CLKEYS "1"          "February 2026" "Cryptlib Tools"  "Cryptlib Tools"             CLKEYS "1"
 .SH NAME
 \fBclkeys\fR \- public/private key management tool interoperating with Thunderbird and OpenSSL
 .SH SYNOPSIS
@@ -45,7 +45,8 @@ When \fBclkeys\fR generates a key pair, a self-signed certificate is created tha
 all kinds of purposes (Digital Signature, Non Repudiation, Key Encipherment, Certificate Sign, CRL Sign)
 and has a very long lifespan (20 years). Any of these self-signed certificates can be used together with
 the corresponding private key to sign certificate requests for other keys used by PKI users for 
-email or other purposes. 
+email or other purposes. The self-signed certificate (or any CA-issued certificate for the same RSA key)
+should be imported into the p15 keyset file, before it is being used to sign or decrypt anything.
 
 These self-signed certificates can also be imported in the CA section of E-mail clients like Thunderbird,
 but they are not fit for identifying persons, as their Basic Constraint is set to CA:TRUE and they don't
@@ -77,7 +78,7 @@ This program depends on two packages providing the cryptlib shared object
 library and the python3-bindings to this library.
 
 You can download both packages in RPM or DEB format at 
-https://senderek.ie/cryptlib/downloads
+https://senderek.ie/cryptlib/
 
 Using FEDORA you can install the packages cryptlib and cryptlib-python3
 directly from the repository.
@@ -150,7 +151,7 @@ This program is used to provide the passphrase based on a user's input.
 /usr/bin/dumpasn1
 This program is used to list the ASN1 structure of p15 keyset files.
 .TP
-/lib64/libcl.so.3.4.8
+/lib64/libcl.so.3.4.9
 The cryptlib library.
 .TP
 /usr/lib/python3.1x/site-packages/cryptlib_py.so
@@ -168,7 +169,7 @@ Please report bugs to innovation@senderek.ie
 .fi
 
 .SH COPYRIGHT
-Copyright \(co 2023 - 2025 Ralf Senderek. All rights reserved.
+Copyright \(co 2023 - 2026 Ralf Senderek. All rights reserved.
 
 License BSD-3-Clause: <https://senderek.ie/cryptlib/bsd.html>.
 .br

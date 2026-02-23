@@ -2,10 +2,10 @@
 
 """
 * File     : claes
-* Version  : 1.1
+* Version  : 1.2
 * License  : BSD-3-Clause
 *
-* Copyright (c) 2022 - 2025
+* Copyright (c) 2022 - 2026
 *	Ralf Senderek, Ireland.  All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -38,17 +38,17 @@ import sys, os
 from binascii import *
 
 # error return codes
-ERR_CL       = -1
-OK           = 0
-ERR_NOBYTES  = 1
-ERR_PERM     = 2
-ERR_PASSWORD = 3
-ERR_INSTALL  = 4
-ERR_WRONGKEY = 5
-ERR_DECODE   = 6
-ERR_SIZE     = 7
-ERR_ENCRYPT  = 8
-ERR_DECRYPT  = 9
+ERR_CL         = -1
+OK             = 0
+ERR_NOBYTES    = 1
+ERR_PERM       = 2
+ERR_PASSWORD   = 3
+ERR_INSTALL    = 4
+ERR_WRONGKEY   = 5
+ERR_DECODE     = 6
+ERR_SIZE       = 7
+ERR_ENCRYPT    = 8
+ERR_DECRYPT    = 9
 ERR_CORRUPT    = 10
 ERR_INCOMPLETE = 11
 ERR_INPUT      = 12
@@ -66,7 +66,7 @@ except:
      print( ERR_IMPORT )
      exit( ERR_INSTALL )
 
-Version        = "1.1"
+Version        = "1.2"
 DEBUG          = False
 BINARY         = False
 MaxBytes       = 268400000                   # no more than INT_MAX//8 (pow(2,31)//8)
@@ -158,6 +158,14 @@ def print_debug ( message ):
           sys.stderr.write( message + "\n" )
 
 #-----------------------------------------------------------#
+def safe_input(message):
+     try:
+          return input(message)
+     except:
+          print()
+          return ""
+
+#-----------------------------------------------------------#
 def get_proper_filename():
      global OutFilename
 
@@ -173,9 +181,9 @@ def get_proper_filename():
                     else:
                          OutFilename = FileName + ".asc"
                if (os.path.isfile(OutFilename)) :
-                    RET = input("Overwrite " + OutFilename + " ? [y/n] ")
+                    RET = safe_input("Overwrite " + OutFilename + " ? [y/n] ")
                     if (RET !=  "y") :
-                         OutFilename = input("File name to write : ")
+                         OutFilename = safe_input("File name to write : ")
           else:
                # source is standard input, write to stdin.asc
                OutFilename = "./stdin.asc"
@@ -186,21 +194,34 @@ def get_proper_filename():
                     OutFilename = FileName[:-4]
                else:
                     # get a proper file name to write to
-                    OutFilename = input("File name to write : ")
+                    OutFilename = safe_input("File name to write : ")
                if (os.path.isfile(OutFilename)) :
-                    RET = input("Overwrite " + OutFilename + " ? [y/n] ")
+                    RET = safe_input("Overwrite " + OutFilename + " ? [y/n] ")
                     if (RET !=  "y") :
-                         OutFilename = input("Filename to write : ")
+                         OutFilename = safe_input("Filename to write : ")
 
 #-----------------------------------------------------------#
 def unix (command) :
      Result = ""
      if os.name == "posix" :
-          Pipe = os.popen(command, "r")
-          Result = Pipe.read()
-          Pipe.close()
+          try:
+               # do not santitize, because every byte can be part of the password. 
+               Pipe = os.popen(command, "r")
+               Result = Pipe.read()
+               Pipe.close()
+               return Result
+          except:
+               print("\nA Unix command failed!\n")
      return Result
 
+#-----------------------------------------------#
+def sanitize(data):
+     forbidden = "!\"\'&§$%()[]{}=?*;,<>\\"
+     good = ""
+     for i in range(len(data)) :
+          if (data[i] not in forbidden) and (ord(data[i]) < 128):
+               good += data[i]
+     return good
 #-----------------------------------------------#
 
 CRC_24_INITIALIZATION = 0x00b704ce
@@ -263,6 +284,12 @@ def crc24_encoding(buff):
 #-----------------------------------------------#
 def write_pgp_message(buff, pathname):
      # writes an encrypted bytearray into a file
+
+     pathname = sanitize(pathname)
+     if len(pathname) == 0:
+          print("Error: Illegal file name.")
+          return False
+
      try:
           if not BINARY:
                F = open(pathname,'w')
@@ -288,6 +315,7 @@ def write_pgp_message(buff, pathname):
                F.write( buff )
                F.close()
           unix("chmod 600 " + pathname)
+          return True
      except:
           print (str( sys.exc_info()[0]) )
           print ("Error: cannot write to " + pathname)
@@ -295,6 +323,12 @@ def write_pgp_message(buff, pathname):
 #-----------------------------------------------#
 def write_openssl_message(salt, buff, pathname):
      # writes an OpenSSL encrypted buffer into a file
+     
+     pathname = sanitize(pathname)
+     if len(pathname) == 0:
+          print("Error: Illegal file name.")
+          return False
+
      try:
           OUT = bytearray(b'Salted__')
           OUT.extend(salt)
@@ -315,8 +349,8 @@ def write_openssl_message(salt, buff, pathname):
                F = open(pathname,'wb')
                F.write( OUT )
                F.close()
-
           unix("chmod 600 " + pathname)
+          return True
      except:
           print (str( sys.exc_info()[0]) )
           print ("Error: cannot write to " + pathname)
@@ -325,6 +359,12 @@ def write_openssl_message(salt, buff, pathname):
 def write_cms_message(buff, pathname):
      # writes a CMS encrypted buffer base64 encoded into a file
      # the option -binary has no effect here
+
+     pathname = sanitize(pathname)
+     if len(pathname) == 0:
+          print("Error: Illegal file name.")
+          return False
+
      try:
           F = open(pathname,'w')
 
@@ -339,6 +379,7 @@ def write_cms_message(buff, pathname):
                     F.write("\n")
           F.write("-----END CMS-----\n")
           unix("chmod 600 " + pathname)
+          return True
      except:
           print (str( sys.exc_info()[0]) )
           print ("Error: cannot write to " + pathname)
@@ -523,10 +564,12 @@ def clean_envelope():
 def clean_context():
      global AESContext 
      global password
+     global Envelope
      try:
           print_debug("Cleaning context before exit")
           password = get_random_bytes( len(password) )
           cryptDestroyContext( AESContext )
+          cryptDestroyEnvelope( Envelope )
           cryptEnd()
      except:
           pass
@@ -615,7 +658,6 @@ else:
      except:
           exit ( ERR_PERM )
 
-
 OutFilename = FileName
 get_proper_filename ()
 
@@ -666,7 +708,10 @@ if not DECRYPTION:
 # because either encryption or decryption will use it anyway
 
 password = bytearray()
-password.extend( unix(ASKPASS).encode() )
+try:
+     password.extend( unix(ASKPASS).encode() )
+except:
+     unix("/bin/stty sane")
 
 if len( password ) >= MinPasswordLength and len( password ) <= MaxPasswordLength :
      password = password[:-1]
@@ -686,6 +731,7 @@ if len( password ) >= MinPasswordLength and len( password ) <= MaxPasswordLength
           print_debug (str(len(password)) + " bytes used as password")
 else:
      print ("Error: Your password must have at least " + str(MinPasswordLength) + " characters. Nothing done.")
+     unix("/bin/stty sane")
      clean_envelope()
      # terminate the program
      exit (ERR_PASSWORD)
@@ -795,6 +841,7 @@ if (not DECRYPTION) :
                     # clean password before exit
                     password = get_random_bytes( len(password) )
                     print("Input is too large")
+                    clean_envelope()
                     exit( ERR_SIZE )
 
                # get an AEScontext from a password and salt
@@ -870,7 +917,8 @@ if (not DECRYPTION) :
                write_cms_message(Buffer , OutFilename)
      else:
           # ENCRYPTION failed
-          print ("Encryption failed.")
+          print ("Error: Encryption failed.")
+          clean_context()
           exit ( ERR_ENCRYPT )
 
 else:
@@ -1140,13 +1188,13 @@ else:
                     # if decryption was successful, the decrypted data is in-place
                     cryptDestroyContext( AESContext )
                     print_debug ( "Retrieving " + str(len(CryptoBuffer)) + " decrypted bytes." )
-
 		    # use PKCS#7 padding to remove padding bytes from the tail of the clear text
                     Last = int( CryptoBuffer[ len(CryptoBuffer) -1 ] )
                     if Last > 16 :
-                         print ( "This data is not AES-256 encrypted." )
+                         print ( "This data is not AES-256 encrypted with the given password." )
+                         print ( "Maybe the password is incorrect or AES-128 has been used." )
                          print ( "Please try the option -128 for AES encryption" )
-                         clean_context()
+                         clean_envelope()
                          exit ( ERR_DECRYPT )
 
                     for X in range( Last ) :

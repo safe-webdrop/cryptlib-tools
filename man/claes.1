@@ -1,4 +1,4 @@
-.TH CLAES "1"          "August 2025" "Cryptlib Tools"  "Cryptlib Tools"             CLAES "1"
+.TH CLAES "1"          "February 2026" "Cryptlib Tools"  "Cryptlib Tools"             CLAES "1"
 .SH NAME
 \fBclaes\fR \- conventional encryption tool interoperating with gpg and openssl
 .SH SYNOPSIS
@@ -6,7 +6,8 @@
 .br
 .SH DESCRIPTION
 \fBclaes\fR encrypts or decrypts data in OpenPGP format, CMS format and OPENSSL format using files or standard input with a passphrase-based AES cipher.
-If no FILE or "-" is given, data is read from standard input. 
+If no FILE or "-" is given, data is read from standard input. If data is piped into claes, then the
+interactive password entry is not available.
 The size of any internal input data is limited to 256 MByte.  The default mode of operation is \fBencryption\fR with the ciphertext stored base64-encoded in the OpenPGP format.  To decrypt base64-encoded or binary input data the option \fB-decrypt\fR must be used.
 
 All input data is processed AS IS and is treated internally as binary data with no changes. For every encryption or decryption a user-provided passphrase is read from the terminal in which claes is run. So \fBclaes\fR always works interactively.
@@ -54,7 +55,7 @@ This program depends on two packages providing the cryptlib shared object
 library and the python3-bindings to this library.
 
 You can download both packages in RPM or DEB format at 
-https://senderek.ie/cryptlib/downloads
+https://senderek.ie/cryptlib/
 
 Using FEDORA you can install the packages cryptlib and cryptlib-python3
 directly from the repository.
@@ -73,7 +74,7 @@ Without any options claes produces OpenPGP (base64-encoded) encrypted messages u
 It can decrypt any messages (ascii or binary) produced by GnuPG with the following ciphers:
 AES, AES192, AES256, 3DES and CAST-128. The option "-binary" causes the output written to a
 file with the .gpg extension. As binary output does not compute the CRC24 checksum, it is much
-faster than the default mode and is recommended for the encryption of larger files.
+faster than the default mode and is recommended for the encryption of large files.
 
 To mangle the password correctly the option \fB--s2k-digest-algo SHA256\fR must be used with gpg.
 
@@ -103,7 +104,7 @@ In CMS mode claes produces PKCS#7 formated (base64-encoded) enveloped and encryp
 /usr/bin/systemd-ask-password
 This program is used to provide the passphrase based on a user's input.
 .TP
-/lib64/libcl.so.3.4.8
+/lib64/libcl.so.3.4.9
 The cryptlib library.
 .TP
 /usr/lib/python3.1x/site-packages/cryptlib_py.so
@@ -121,7 +122,7 @@ Please report bugs to innovation@senderek.ie
 .fi
 
 .SH COPYRIGHT
-Copyright \(co 2022 - 2025 Ralf Senderek. All rights reserved.
+Copyright \(co 2022 - 2026 Ralf Senderek. All rights reserved.
 
 License BSD-3-Clause: <https://senderek.ie/cryptlib/bsd.html>.
 .br

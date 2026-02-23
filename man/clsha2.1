@@ -1,5 +1,5 @@
 .\" clsha2 - print SHA256 hash values of files or standard input 
-.TH "clsha2" "1" "" "Ralf Senderek" ""
+.TH "clsha2" "1" "Februray 2026" "Cryptlib Tools"  ""
 .SH "NAME"
 clsha2
 .SH "SYNOPSIS"
@@ -25,16 +25,25 @@ No FILE or "-" reads from standard input.
 
 .PP 
 
+.SH NOTES
+Full documentation <https://senderek.ie/cryptlib/tools>     
+
+This program depends on two packages providing the cryptlib shared object
+library and the python3-bindings to this library.
+
+You can download both packages in RPM or DEB format at 
+https://senderek.ie/cryptlib/
+
 .SH "FILES"
 clsha2 uses the cryptlib shared object library and its python3 bindings.
 .PP
 .nf
-/lib64/libcl.so.3.4.8
+/lib64/libcl.so.3.4.9
 /usr/lib/python3.1x/site-packages/cryptlib_py.so
 .fi 
 
 .SH COPYRIGHT
-Copyright \(co 2022 - 2025 Ralf Senderek. All rights reserved.
+Copyright \(co 2022 - 2026 Ralf Senderek. All rights reserved.
 
 License BSD-3-Clause: <https://senderek.ie/cryptlib/bsd.html>.
 .br

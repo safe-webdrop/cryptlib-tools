@@ -2,10 +2,10 @@
 
 """
 * File: clkeys
-* Version  : 1.1
+* Version  : 1.2
 * License  : BSD-3-Clause
 *
-* Copyright (c) 2023 - 2025
+* Copyright (c) 2023 - 2026
 *	Ralf Senderek, Ireland.  All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -52,7 +52,7 @@ ERR_INCOMPLETE = 11
 Mode              = "generate"
 MinPasswordLength = 8
 MaxPasswordLength = 64
-Version           = "1.1"
+Version           = "1.2"
 KeyFileName       = "./rsakeyfile.p15"
 CertFileName      = "./certificate.pem"
 CSRFileName       = "./CSR"
@@ -94,20 +94,25 @@ except:
 
 #-----------------------------------------------------------#
 def unix (command) :
+     Result = ""
      if os.name == "posix" :
-          Pipe = os.popen(sanitize(command), "r")
-          Result = Pipe.read()
-          Pipe.close()
+          try:
+               Pipe = os.popen(sanitize(command), "r")
+               Result = Pipe.read()
+               Pipe.close()
+               return Result
+          except:
+               print("\nA Unix command failed.\n")
      return Result
 
 #-----------------------------------------------#
 
 ASKPASS = "/bin/systemd-ask-password"
+
+
 if not os.path.isfile(ASKPASS) :
      print ("Error: Please install " + ASKPASS + " to ensure safe password input")
      exit(ERR_INSTALL)
-
-
 
 
 #-----------------------------------------------------------#
@@ -136,7 +141,7 @@ def clean():
                cryptDestroyContext( privKeyContext )
           cryptEnd()
      except:
-          pass
+          cryptEnd()
 
 #-----------------------------------------------------------#
 def write_CSR(buff, pathname):
@@ -157,7 +162,6 @@ def write_CSR(buff, pathname):
           F.write("-----END CERTIFICATE REQUEST-----\n")
           unix("chmod 600 '" + pathname + "'")
      except:
-          print (str( sys.exc_info()[0]) )
           print ("Error: cannot write to " + pathname)
 
 #-----------------------------------------------------------#
@@ -478,6 +482,7 @@ try:
           ASN1 = get_asn1 (KeyFileName)
           print(ASN1)
           # nothing to clean !
+          cryptEnd()
           exit(OK)
 
      if ( (Mode == "generate") ) :
@@ -510,6 +515,7 @@ try:
                del Password
           else:
                print ("Error: Your password must have at least " + str(MinPasswordLength) + " characters. Nothing done.")
+               unix("/bin/stty sane")
                clean()
                exit (ERR_PASSWORD)
 
@@ -531,19 +537,30 @@ try:
           cryptExportCert( EncodedCert, certMaxLength, certFormatType, cryptCertificate )
           print(EncodedCert.decode())
 
-          # write cert to file
-          F = open (CertFileName,"bw")
-          F.write(EncodedCert)
-          F.close()
-          unix("chmod 600 '" + CertFileName + "'")
+          try:
+               # write cert to file
+               F = open (CertFileName,"bw")
+               F.write(EncodedCert)
+               F.close()
+               unix("chmod 600 '" + CertFileName + "'")
 
-	  # write KEYID to file
-          F = open (KeyFileName + ".KEYID","bw")
-          F.write( Name )
-          F.close()
-
-          cryptKeysetClose( cryptKeyset )
-          unix("/bin/cp " + KeyFileName + " " + KeyBaseName )
+               # write KEYID to file
+               F = open (KeyFileName + ".KEYID","bw")
+               F.write( Name )
+               F.close()
+               unix("chmod 600 '" + KeyFileName + ".KEYID'")
+               # the keyset must be closed before it can be copied
+               cryptKeysetClose( cryptKeyset )
+               cryptDestroyContext( privKeyContext )
+               cryptDestroyContext( cryptCertificate )
+               unix("/bin/cp " + KeyFileName + " " + KeyBaseName )
+               cryptEnd()
+          except:
+               print("Cannot write files.")
+               cryptDestroyContext( cryptCertificate )
+               clean()
+               exit( ERR_PERM )
+          exit(OK)
 
      if (Mode == "request") :
           try:
@@ -553,6 +570,7 @@ try:
                status, message = e.args
                if status == CRYPT_ERROR_BADDATA :
                     print( "Error: The keyset file " + KeyFile.decode() + " cannot be used. It may be corrupted." )
+               cryptEnd( )
                exit( ERR_CORRUPT )
 
           # get the public key
@@ -584,6 +602,7 @@ try:
                     del Password
                     if status == CRYPT_ERROR_WRONGKEY :
                          print( "Error: You have entered the wrong password. Private key is unavailable." )
+                         cryptDestroyContext( pubKey )
                          clean()
                          exit( ERR_PASSWORD )
                     elif status == CRYPT_ERROR_NOTFOUND :
@@ -591,6 +610,7 @@ try:
                          Owner = get_DN_from_keyset (KeyFile.decode()) 
                          if Owner :
                               print( "       Found the key-owner name " + Owner + " in the keyset file" )
+                         cryptDestroyContext( pubKey )
                          clean()
                          exit( ERR_PASSWORD )
 
@@ -600,6 +620,8 @@ try:
           else:
                print ("Error: Your password must have at least " + str(MinPasswordLength) + " characters. Nothing done.")
                Password = get_random_bytes( len(Password) )
+               cryptDestroyContext( pubKey )
+               unix("/bin/stty sane")	       
                clean()
                exit (ERR_PASSWORD)
 
@@ -613,16 +635,22 @@ try:
 
           if ( not re.fullmatch(regex, CertEMAIL) ) :
                print( "The email address \"" + CertEMAIL + "\" is invalid!" )
+               cryptDestroyContext( pubKey )
+               cryptDestroyContext( CertRequest )
                clean()
                exit ( ERR_INCOMPLETE )
 
           if CertNAME == "." or CertEMAIL == "." or len(CertNAME) < 3  or len(CertEMAIL) == 0 :
                print( "You need to enter a common name and a valid email address!" )
+               cryptDestroyContext( pubKey )
+               cryptDestroyContext( CertRequest )
                clean()
                exit ( ERR_INCOMPLETE )
 
           if CertCOUNTRY == "." or len(CertCOUNTRY) != 2 :
                print("Please provide a correct country code")
+               cryptDestroyContext( pubKey )
+               cryptDestroyContext( CertRequest )
                clean()
                exit(ERR_INCOMPLETE)
 
@@ -649,6 +677,8 @@ try:
                status, message = e.args
                if status == CRYPT_ERROR_PARAM4 :
                     print( "Error: You need to enter a valid email address!" )
+                    cryptDestroyContext( pubKey )
+                    cryptDestroyContext( CertRequest )
                     clean()
                     exit( ERR_INCOMPLETE )
 
@@ -658,6 +688,8 @@ try:
                status, message = e.args
                if status == CRYPT_ERROR_NOTINITED :
                     print( "Error: You need to enter at least a country name, a common name." )
+                    cryptDestroyContext( pubKey )
+                    cryptDestroyContext( CertRequest )
                     clean()
                     exit( ERR_INCOMPLETE )
 
@@ -666,15 +698,22 @@ try:
           print ("\nGenerating a CSR of length: " + str(requestMaxLength) + " bytes.")
           cryptExportCert( EncodedCSR, requestMaxLength, CRYPT_CERTFORMAT_CERTIFICATE, CertRequest )
 
-          # write CSR to file 
-          print( "Writing the certificate signing request to the file " + CSRFileName+".pem ." )
-          write_CSR(EncodedCSR, CSRFileName+".pem")
+          try:
+               # write CSR to file 
+               print( "Writing the certificate signing request to the file " + CSRFileName+".pem ." )
+               write_CSR(EncodedCSR, CSRFileName+".pem")
 
-	  # also write the binary content to
-          F = open (CSRFileName+".der","bw")
-          F.write(EncodedCSR)
-          F.close()
-          unix("chmod 600 '" + CSRFileName + ".der'")
+               # also write the binary content to
+               F = open (CSRFileName+".der","bw")
+               F.write(EncodedCSR)
+               F.close()
+               unix("chmod 600 '" + CSRFileName + ".der'")
+          except:
+               print("Cannot write files.")
+               cryptDestroyContext( pubKey )
+               cryptDestroyContext( CertRequest )
+               clean()
+               exit( ERR_PERM )
 
      if (Mode == "import") :
 
@@ -687,6 +726,8 @@ try:
                status, message = e.args
                if status == CRYPT_ERROR_BADDATA :
                     print( "Error: The keyset file " + KeyFile.decode() + " cannot be used. It may be corrupted." )
+               cryptDestroyContext( cryptCertificate )
+               cryptEnd()   
                exit( ERR_CORRUPT )
 
           # Update the keyset with the certificate
@@ -713,7 +754,6 @@ try:
                status, message = e.args
                if status == CRYPT_ERROR_BADDATA :
                     print( "Error: The request is probably corrupt." )
-                    cryptDestroyContext( CertRequest )
                     cryptEnd()
                     exit( ERR_CORRUPT )
           try: 
@@ -749,7 +789,10 @@ try:
                status, message = e.args 
                if status == CRYPT_ERROR_BADDATA :
                     print( "Error: The keyset file " + KeyFile.decode() + " cannot be used. It may be corrupted." )
-               clean()
+               
+               cryptDestroyContext( CertRequest )
+               cryptDestroyContext( cryptCertificate )
+               cryptEnd()
                exit( ERR_CORRUPT )
 
 	  # read the CA signing key from the keyset
@@ -767,14 +810,19 @@ try:
                     del Password
                     if status == CRYPT_ERROR_WRONGKEY :
                          print( "Error: You have entered the wrong password. The CA private key is unavailable." )
+                         cryptDestroyContext( CertRequest )
+                         cryptDestroyContext( cryptCertificate )
                          clean()
                          exit( ERR_PASSWORD )
+
                     elif status == CRYPT_ERROR_NOTFOUND :
                          print( "Error: The KEYID " + Name.decode() + " is incorrect! The CA private key is unavailable." )
                          Owner = get_DN_from_keyset (KeyFile.decode())
                          if Owner :
                               print( "       Found the CA key-owner name " + Owner + " in the keyset file" )
                               print( "       Please make sure that a proper KEYID file is present for this CA key." )
+                         cryptDestroyContext( CertRequest )
+                         cryptDestroyContext( cryptCertificate )
                          clean()
                          exit( ERR_USE )
 
@@ -784,6 +832,9 @@ try:
           else:
                print ("Error: Your password must have at least " + str(MinPasswordLength) + " characters. Nothing done.")
                Password = get_random_bytes( len(Password) )
+               cryptDestroyContext( CertRequest )
+               cryptDestroyContext( cryptCertificate )
+               unix("/bin/stty sane")
                clean()
                exit (ERR_PASSWORD)
 
@@ -808,15 +859,17 @@ try:
           if REPLY == "yes" or REPLY == "y" :
                # now sign the certificate
                try:
-                     cryptSignCert( cryptCertificate, privKeyContext )
+                    cryptSignCert( cryptCertificate, privKeyContext )
                except CryptException as e :
-                     status, message = e.args
-                     print(status)
-                     if status == CRYPT_ERROR_PARAM2 :
-                          print( "Error: The keyset file " + KeyFile.decode() + " may not contain the selfsigend certificate." )
-                          print( "       Please make sure that the CA certificate is imported! " )
-                     clean()
-                     exit( ERR_CORRUPT )
+                    status, message = e.args
+                    if status == CRYPT_ERROR_PARAM2 :
+                         print( "Error: The keyset file " + KeyFile.decode() + " may not contain the selfsigend certificate." )
+                         print( "       Please make sure that the CA certificate is imported! " )
+                    cryptDestroyContext( privKeyContext )
+                    cryptDestroyContext( cryptCertificate )
+                    cryptDestroyContext( CertRequest )
+                    clean()
+                    exit( ERR_USE )
 
 
                # export the new certificate
@@ -834,11 +887,19 @@ try:
 
                print(EncodedCert.decode())
 
-               # write cert to file 
-               F = open (NewCertFileName,"bw")
-               F.write(EncodedCert)
-               F.close()
-               unix("chmod 600 '" + NewCertFileName + "'")
+               try:
+                    # write cert to file 
+                    F = open (NewCertFileName,"bw")
+                    F.write(EncodedCert)
+                    F.close()
+                    unix("chmod 600 '" + NewCertFileName + "'")
+               except:
+                    print("Cannot write file " + NewCertFileName)
+                    cryptDestroyContext( privKeyContext )
+                    cryptDestroyContext( cryptCertificate )
+                    cryptDestroyContext( CertRequest )
+                    clean()
+                    exit( ERR_PERM )
           else:
                print("Nothing done.")
 
@@ -863,4 +924,4 @@ except CryptException as e :
      print( "Error ... " + message )
      clean()
 
-exit(0)
+exit( OK )

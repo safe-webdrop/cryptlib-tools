@@ -2,10 +2,10 @@
 
 """
 * File: clsmime
-* Version  : 1.1
+* Version  : 1.2
 * License  : BSD-3-Clause
 *
-* Copyright (c) 2023 - 2025
+* Copyright (c) 2023 - 2026
 *	Ralf Senderek, Ireland.  All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -66,7 +66,7 @@ Mode              = "encrypt"
 MessageType       = "text"
 MinPasswordLength = 8
 MaxPasswordLength = 64
-Version           = "1.1"
+Version           = "1.2"
 KeyFileName       = ""
 FileName          = ""
 CertFileName      = ""
@@ -168,6 +168,14 @@ def print_debug ( message ):
           sys.stderr.write( message + "\n" )
 
 #-----------------------------------------------------------#
+def safe_input(message):
+     try:
+          return input(message)
+     except:
+          print()
+          return ""
+
+#-----------------------------------------------------------#
 def get_proper_filename():
      global OutFilename
 
@@ -175,34 +183,34 @@ def get_proper_filename():
      if ( Mode == "encrypt" ) :
           OutFilename = FileName + ".smime"
           if (os.path.isfile(OutFilename)) :
-               RET = input("Overwrite " + OutFilename + " ? [y/n] ")
+               RET = safe_input("Overwrite " + OutFilename + " ? [y/n] ")
                if (RET !=  "y") :
-                    OutFilename = input("File name to write : ")
+                    OutFilename = safe_input("File name to write : ")
      
      elif ( Mode == "decrypt" ) :
           if (FileName[-6:] == ".smime") :
                OutFilename = FileName[:-6]
           else:
                # get a proper file name to write to
-               OutFilename = input("File name to write : ")
+               OutFilename = safe_input("File name to write : ")
           if (os.path.isfile(OutFilename)) :
-               RET = input("Overwrite " + OutFilename + " ? [y/n] ")
+               RET = safe_input("Overwrite " + OutFilename + " ? [y/n] ")
                if (RET !=  "y") :
-                    OutFilename = input("Filename to write : ")
+                    OutFilename = safe_input("Filename to write : ")
 
      elif ( Mode == "sign" ) :
           OutFilename = FileName + ".sig"
           if (os.path.isfile(OutFilename)) :
-               RET = input("Overwrite " + OutFilename + " ? [y/n] ")
+               RET = safe_input("Overwrite " + OutFilename + " ? [y/n] ")
                if (RET !=  "y") :
-                    OutFilename = input("File name to write : ")
+                    OutFilename = safe_input("File name to write : ")
      
      if ( Mode == "verify" ) :
           OutFilename = FileName + ".verified"
           if (os.path.isfile(OutFilename)) :
-               RET = input("Overwrite " + OutFilename + " ? [y/n] ")
+               RET = safe_input("Overwrite " + OutFilename + " ? [y/n] ")
                if (RET !=  "y") :
-                    OutFilename = input("File name to write : ")
+                    OutFilename = safe_input("File name to write : ")
      
      OutFilename = sanitize(OutFilename)
      if len(OutFilename) == 0 :
@@ -311,8 +319,8 @@ def analyze_SMIME_signature( input ):
                else:
                     HeaderLength += 2*nl
                print_debug("HeaderLength: " + str(HeaderLength))
-               print_debug("Text        : " + str(Text))
                print_debug("Text Header : " + str(Text[:HeaderLength]))
+               print_debug("Text        : " + str(Text[:300]))
 
 	  # analyze block after text border
           start = textend + len(border) + 2*nl + 1
@@ -385,11 +393,17 @@ def analyze_SMIME_signature( input ):
 def write_raw_message(buff, pathname):
      # writes an encrypted bytearray into a file
      print("Writing " + str(len(buff)) + " bytes to "  + pathname )
+     pathname = sanitize(pathname)
+     if len(pathname) == 0:
+          print("Error: Illegal file name.")
+          return False
+
      try:
           F = open(pathname,'wb')
           F.write(buff)
           F.close()
           unix("chmod 600 " + pathname)
+          return True
      except:
           print (str( sys.exc_info()[0]) )
           print ("Error: cannot write to " + pathname)
@@ -422,13 +436,17 @@ def remove_header(buff) :
                     NewText.append(buff[i])
                i += 1
      return NewText
-
 #-----------------------------------------------------------#
 def unix (command) :
+     Result = ""
      if os.name == "posix" :
-          Pipe = os.popen(sanitize(command), "r")
-          Result = Pipe.read()
-          Pipe.close()
+          try:
+               Pipe = os.popen(sanitize(command), "r")
+               Result = Pipe.read()
+               Pipe.close()
+               return Result
+          except:
+               print("\nA Unix command failed!\n")
      return Result
 
 #-----------------------------------------------------------#
@@ -471,7 +489,7 @@ def clean_envelope():
 
 #-----------------------------------------------------------#
 def sanitize(data):
-     forbidden = "!\"§&$%()[]{}=?*+~,<>\\"
+     forbidden = "!\"§&$%()[]{}=?*;,<>\\"
      good = ""
      for i in range(len(data)) :
           if (data[i] not in forbidden) and (ord(data[i]) < 128):
@@ -482,6 +500,8 @@ def sanitize(data):
 def analyze_SMIME_data( input ):
      global BINARY
 
+     if not input:
+          return b''
      start = 0
      # find '\nMI'
      BEGIN = bytearray(b'\nMI')
@@ -524,6 +544,11 @@ def analyze_SMIME_data( input ):
 #-----------------------------------------------------------#
 def write_smime_message(buff, pathname):
      # writes an encrypted bytearray into a file
+     pathname = sanitize(pathname)
+     if len(pathname) == 0:
+          print("Error: Illegal file name.")
+          return False
+
      try:
           F = open(pathname,'w')
 
@@ -544,6 +569,7 @@ def write_smime_message(buff, pathname):
           F.write("\n")
           F.write("\n")
           unix("chmod 600 " + pathname)
+          return True
      except:
           print (str( sys.exc_info()[0]) )
           print ("Error: cannot write to " + pathname)
@@ -553,6 +579,11 @@ def write_smime_message(buff, pathname):
 #-----------------------------------------------------------#
 def write_pure_signature(buff, pathname):
      # writes a signed bytearray into a file
+     pathname = sanitize(pathname)
+     if len(pathname) == 0:
+          print("Error: Illegal file name.")
+          return False
+
      try:
           F = open(pathname,'w')
 
@@ -573,6 +604,7 @@ def write_pure_signature(buff, pathname):
                     F.write("\n")
           F.write("\n")
           unix("chmod 600 " + pathname)
+          return True
      except:
           print (str( sys.exc_info()[0]) )
           print ("Error: cannot write to " + pathname)
@@ -583,6 +615,11 @@ def write_pure_signature(buff, pathname):
 def write_smime_signature(text, buff, pathname):
      # writes a signed bytearray into a file
      # generate a random boundary
+     pathname = sanitize(pathname)
+     if len(pathname) == 0:
+          print("Error: Illegal file name.")
+          return False
+
      B = bytearray()
      B = get_random_bytes(16)
      Boundary = "----" + hexlify( B ).decode()
@@ -624,6 +661,7 @@ def write_smime_signature(text, buff, pathname):
           F.write("\n")
           F.write("\n")
           unix("chmod 600 " + pathname)
+          return True
      except: 
           print (str( sys.exc_info()[0]) )
           print ("Error: cannot write to " + pathname)
@@ -832,7 +870,10 @@ if len(sys.argv) >= 2 :
                print("The keyset name is invalid.")
                exit( ERR_USE )
 
-          KeyFileName  = SafeKeysetName + ".p15"
+          if SafeKeysetName[-4:] == ".p15" :
+               KeyFileName  = SafeKeysetName
+          else:
+               KeyFileName  = SafeKeysetName + ".p15"
           # check if keyset file exists
           if os.path.isfile (KeyFileName):
                if os.path.getsize(KeyFileName) < 100 :
@@ -898,7 +939,10 @@ try:
           if len(KeyFileName) > 0:
                print_debug("Keyfile    = " +  KeyFileName)
           if len(ImportCert) > 0 :
-               print_debug("ImportCert = \n" +  str(ImportCert[:40].decode()) + " ... " + str(ImportCert[-40:].decode()) + " length: " + str(len(ImportCert)) + " bytes." )
+               try:
+                    print_debug("ImportCert = \n" +  str(ImportCert[:40].decode()) + " ... " + str(ImportCert[-40:].decode()) + " length: " + str(len(ImportCert)) + " bytes." )
+               except:
+                    pass
 
      if (Mode == "decrypt") or (Mode == "verify") :
           Envelope_object =  cryptCreateEnvelope( cryptUser, CRYPT_FORMAT_AUTO)
@@ -908,12 +952,15 @@ try:
           Envelope = int( Envelope_object )
      except:
           print ("Cryptlib error.")
+          cryptDestroyEnvelope( Envelope )
           cryptEnd()
           exit (ERR_CL)
 
 
 #-------LIST----------#
      if Mode == "list":
+          import subprocess
+
           if NumLines < 1000 :
                Num = str(NumLines)
           else:
@@ -937,7 +984,7 @@ try:
           else:
 	       # nothing to decode
                Buffer = Data
-          
+
           # write Buffer into a temporary file
           from pathlib import Path
           TempFile = str(Path.home()) + "/.cryptlibtempfile"
@@ -946,13 +993,35 @@ try:
                F.write(Buffer)
                F.close()
                unix("/bin/chmod 600 " + TempFile )
-               print( unix("/bin/dumpasn1 -z " + TempFile + " | head -" + str(NumLines)) )
-               unix("/bin/rm -f " + TempFile)
           except:
-               print("Cannot write to temporary file " + TempFile)
+               print("Error: Cannot write to temporary file " + TempFile)
+               clean_envelope()
                exit ( ERR_PERM )
-          exit ( OK )
 
+          # run dumpasn on stored Buffer
+          Result = subprocess.run(["/bin/dumpasn1","-z", TempFile], capture_output=True)
+          if Result:
+                    if Result.returncode == 0:
+                         if Result.stdout:
+                              RESULT = Result.stdout.decode()
+                              List = RESULT.split('\n')
+                              i = 0
+                              while i < NumLines :
+                                   print(str(List[i]))
+                                   i += 1
+                    else:
+                         print(Result.stderr.decode())
+                         unix("/bin/rm -f " + TempFile)
+                         clean_envelope()
+                         exit( ERR_CORRUPT )
+          else:
+               unix("/bin/rm -f " + TempFile)
+               clean_envelope()
+               exit ( ERR_USE )
+
+          unix("/bin/rm -f " + TempFile)
+          clean_envelope()
+          exit ( OK )
 
 #-------ENCRYPT----------#
      if Mode == "encrypt":
@@ -1039,13 +1108,11 @@ try:
                except CryptException as e :
                     status, message = e.args
                     print( "Encryption error: " + message )
-                    clean_envelope()
                     exit( ERR_ENCRYPT )
           else:
                print_debug( "Input is too big" )
                clean_envelope()
                exit( ERR_SIZE )
-
           if ( Buffer ) :
                # write the encrypted Buffer into the file system
                print("Writing " + OutFilename)
@@ -1136,10 +1203,12 @@ try:
                                          exit( ERR_PASSWORD )
                                     elif status == CRYPT_ERROR_NOTFOUND :
                                          print( "Error: The private key is unavailable." )
+                                         print( "       Maybe the certificate used for encryption is not yet imported?" )
                                          clean_envelope()
                                          exit (ERR_DECRYPT)
                           else:
                                print ("Error: Your password must have at least " + str(MinPasswordLength) + " characters. Nothing done.")
+                               unix("/bin/stty sane")
                                clean_envelope()
                                exit (ERR_PASSWORD)
 
@@ -1168,12 +1237,19 @@ try:
                Cleartext = Cleartext[:bytesCopied]
                # Cleartext holds the decrypted data
 
-               F = open( OutFilename, "wb" )
-               F.write( Cleartext )
-               F.close()
-               unix("chmod 600 " + OutFilename)
-               print("Clear text written to " +  OutFilename)
-               Cleartext = get_random_bytes( len(Cleartext) )
+               try:
+                    F = open( OutFilename, "wb" )
+                    F.write( Cleartext )
+                    F.close()
+                    unix("chmod 600 " + OutFilename)
+                    print("Clear text written to " +  OutFilename)
+                    Cleartext = get_random_bytes( len(Cleartext) )
+               except:
+                    print("Error: Cannot write to file " + OutFilename)
+                    clean_envelope()
+                    exit ( ERR_PERM )
+          clean_envelope()
+          exit( OK )
 
 
 #-------SIGN   ----------#
@@ -1208,6 +1284,7 @@ try:
                print_debug (str(len(Password)) + " bytes used as password")
           else:
                print ("Error: Your password must have at least " + str(MinPasswordLength) + " characters. Nothing done.")
+               unix("/bin/stty sane")
                clean_envelope()
                # terminate the program
                exit (ERR_PASSWORD)
@@ -1300,10 +1377,11 @@ try:
                     try:
                          bytesCopied = cryptPushData( Envelope, Buffer)
                     except CryptException as e :
-                         # catch the advisory exception, that the key is still missing
+                         # catch the advisory exception, that the certificate is still missing
                          status, message = e.args
                          if status != CRYPT_ENVELOPE_RESOURCE :
                                print( "Signing error while pushing bytes into the envelope. " + message )
+                               print( "Maybe you need to import a certificate into the keyset" )
                                clean_envelope()
                                exit( ERR_SIGN )
 
@@ -1406,14 +1484,19 @@ try:
 	  # push signature Data into envelope
           if ( Buffer ) :
                try:
+                    bytesCopied = 0
                     print_debug("Pushing signature data ...")
                     bytesCopied = cryptPushData( Envelope, Buffer)
                     cryptFlushData( Envelope )
                     print_debug( "Flushed signature data." )
                except CryptException as e :
                     status, message = e.args
-                    if status == CRYPT_ERROR_BADDATA :
-                         print( "Verification error while pushing signature bytes into the envelope. " + message )
+                    print( "Verification error while pushing signature bytes into the envelope. " )
+                    if (status == CRYPT_ERROR_NOTFOUND) and not bytesCopied:
+                         clean_envelope()
+                         exit( ERR_VERIFY )
+
+                    if (status == CRYPT_ERROR_BADDATA) :
                          clean_envelope()
                          exit( ERR_VERIFY )
 
@@ -1450,7 +1533,7 @@ try:
                     print( "Verification error: " + message )
                     clean_envelope()
                     exit( ERR_VERIFY )
-               
+
           #  Determine the result of the signature check
           Result = -1
           try:
@@ -1537,6 +1620,7 @@ try:
           exit( OK )
 
      # normal clean up
+     print_debug("Final shutdown ...")
      clean_envelope()
      exit(0)
 
