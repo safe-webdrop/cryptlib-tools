@@ -2,7 +2,7 @@
 
 """
 * File: clsmime
-* Version  : 1.2
+* Version  : 1.3
 * License  : BSD-3-Clause
 *
 * Copyright (c) 2023 - 2026
@@ -38,23 +38,23 @@
 import sys, os, re
 from binascii import *
 
-ERR_CL         = -1
-OK             = 0
-ERR_USE        = 1
-ERR_PERM       = 2
-ERR_PASSWORD   = 3
-ERR_INSTALL    = 4
-ERR_WRONGKEY   = 5
-ERR_DECODE     = 6
-ERR_SIZE       = 7
-ERR_ENCRYPT    = 8
-ERR_DECRYPT    = 9
-ERR_CORRUPT    = 10
-ERR_INCOMPLETE = 11
-ERR_INPUT      = 12
-ERR_SIGN       = 13
-ERR_VERIFY     = 14
-ERR_BADSIG     = 15
+ERR_CL            = -1
+OK                = 0
+ERR_USE           = 1
+ERR_PERM          = 2
+ERR_PASSWORD      = 3
+ERR_INSTALL       = 4
+ERR_WRONGKEY      = 5
+ERR_DECODE        = 6
+ERR_SIZE          = 7
+ERR_ENCRYPT       = 8
+ERR_DECRYPT       = 9
+ERR_CORRUPT       = 10
+ERR_INCOMPLETE    = 11
+ERR_INPUT         = 12
+ERR_SIGN          = 13
+ERR_VERIFY        = 14
+ERR_BADSIG        = 15
 
 DEBUG             = False
 BINARY            = False
@@ -66,7 +66,7 @@ Mode              = "encrypt"
 MessageType       = "text"
 MinPasswordLength = 8
 MaxPasswordLength = 64
-Version           = "1.2"
+Version           = "1.3"
 KeyFileName       = ""
 FileName          = ""
 CertFileName      = ""
@@ -98,7 +98,6 @@ ASKPASS = "/bin/systemd-ask-password"
 if not os.path.isfile(ASKPASS) :
      print ("Error: Please install " + ASKPASS + " to ensure safe password input")
      exit(ERR_INSTALL)
-
 
 
 
@@ -162,6 +161,68 @@ INTEROPERABILITY
      print( Help )
 
 #-----------------------------------------------------------#
+def get_password():
+     # writes a bytearray without \n into the global variable Password
+     import subprocess
+     global Password
+     
+     Password = bytearray()
+     try:
+          Result = subprocess.run([ASKPASS], capture_output=True)
+          if Result and  Result.returncode == 0 :
+               Password = bytearray(Result.stdout.strip())
+               # overwrite Result.stdout
+               Result.stdout = b'0'*64
+     except:
+          # recover tty after keyboard interrupt, when echo is turned off
+          Result = subprocess.run(["/bin/stty","sane"])
+
+#-----------------------------------------------------------#
+def chmodf (FileName):
+     #FileName is a string
+     try:
+          os.chmod(sanitize(FileName),0o600)
+          return True
+     except:
+          return False
+
+#-----------------------------------------------------------#
+def clonef (Src, Dst):
+     #Src and Dst are strings
+     import shutil
+     try:
+          shutil.copy2(sanitize(Src), sanitize(Dst))
+          return True
+     except:
+          return False
+
+#-----------------------------------------------------------#
+def destroy (FileName):
+     try:
+          # overwrite FileName with 0
+          numbytes = os.path.getsize(FileName)
+          F = open (FileName, "wb")
+          for i in range(numbytes):
+              F.write(b'0')
+          F.close()
+     except:
+          print("Cannot zeroize the file, write permission is not set")
+     try:
+          os.remove(sanitize(FileName))
+          return True
+     except:
+          return False
+
+#-----------------------------------------------------------#
+def sanitize(data):
+     forbidden = "!\"§&$%()[]{}=?*;,<>\\"
+     good = ""
+     for i in range(len(data)) :
+          if (data[i] not in forbidden) and (ord(data[i]) < 128):
+               good += data[i]
+     return good
+
+#-----------------------------------------------------------#
 def print_debug ( message ):
      if DEBUG and message :
           sys.stderr.write( "Debug: " )
@@ -216,6 +277,28 @@ def get_proper_filename():
      if len(OutFilename) == 0 :
           print("Please enter a valid file name")
           exit(ERR_PERM)
+
+#-----------------------------------------------------------#
+def clean_envelope():
+     global Envelope
+     global cryptKeyset
+     global certificate
+     global sigKeyContext
+     global Password
+
+     print_debug("Cleaning envelope before exit")
+     try:
+          if (Mode == "decrypt") or (Mode == "sign") :
+               Password = get_random_bytes( len(Password) )
+               cryptKeysetClose( cryptKeyset )
+               if (Mode == "sign") :
+                    cryptDestroyContext( sigKeyContext )
+          elif (Mode == "encrypt"):   
+               cryptDestroyContext( certificate )
+     except:
+          pass
+     cryptDestroyEnvelope( Envelope )
+     cryptEnd()
 
 #-----------------------------------------------------------#
 def analyze_SMIME_signature( input ):
@@ -402,7 +485,7 @@ def write_raw_message(buff, pathname):
           F = open(pathname,'wb')
           F.write(buff)
           F.close()
-          unix("chmod 600 " + pathname)
+          chmodf(pathname)
           return True
      except:
           print (str( sys.exc_info()[0]) )
@@ -436,18 +519,6 @@ def remove_header(buff) :
                     NewText.append(buff[i])
                i += 1
      return NewText
-#-----------------------------------------------------------#
-def unix (command) :
-     Result = ""
-     if os.name == "posix" :
-          try:
-               Pipe = os.popen(sanitize(command), "r")
-               Result = Pipe.read()
-               Pipe.close()
-               return Result
-          except:
-               print("\nA Unix command failed!\n")
-     return Result
 
 #-----------------------------------------------------------#
 def get_random_bytes ( num ):
@@ -464,37 +535,6 @@ def get_random_bytes ( num ):
           cryptEncrypt( RandomContext, RandomBuffer )
           cryptDestroyContext( RandomContext )
           return RandomBuffer
-
-#-----------------------------------------------------------#
-def clean_envelope():
-     global Envelope
-     global cryptKeyset
-     global certificate
-     global sigKeyContext
-     global Password
-
-     print_debug("Cleaning envelope before exit")
-     try:
-          if (Mode == "decrypt") or (Mode == "sign") :
-               Password = get_random_bytes( len(Password) )
-               cryptKeysetClose( cryptKeyset )
-               if (Mode == "sign") :
-                    cryptDestroyContext( sigKeyContext )
-          elif (Mode == "encrypt"):   
-               cryptDestroyContext( certificate )
-     except:
-          pass
-     cryptDestroyEnvelope( Envelope )
-     cryptEnd()
-
-#-----------------------------------------------------------#
-def sanitize(data):
-     forbidden = "!\"§&$%()[]{}=?*;,<>\\"
-     good = ""
-     for i in range(len(data)) :
-          if (data[i] not in forbidden) and (ord(data[i]) < 128):
-               good += data[i]
-     return good
 
 #-----------------------------------------------------------#
 def analyze_SMIME_data( input ):
@@ -568,7 +608,7 @@ def write_smime_message(buff, pathname):
                     F.write("\n")
           F.write("\n")
           F.write("\n")
-          unix("chmod 600 " + pathname)
+          chmodf(pathname)
           return True
      except:
           print (str( sys.exc_info()[0]) )
@@ -603,7 +643,7 @@ def write_pure_signature(buff, pathname):
                if i < len(ASCII) :
                     F.write("\n")
           F.write("\n")
-          unix("chmod 600 " + pathname)
+          chmodf(pathname)
           return True
      except:
           print (str( sys.exc_info()[0]) )
@@ -660,7 +700,7 @@ def write_smime_signature(text, buff, pathname):
           F.write("--" + Boundary)
           F.write("\n")
           F.write("\n")
-          unix("chmod 600 " + pathname)
+          chmodf(pathname)
           return True
      except: 
           print (str( sys.exc_info()[0]) )
@@ -765,6 +805,7 @@ def SignatureIsOK(vbuf, vtext):
                return False
      cryptDestroyEnvelope( TestEnvelope )
      return False
+
 #-----------------------------------------------------------#
 
 if ( len(sys.argv) > 1 ):
@@ -847,8 +888,8 @@ else:
 
 # read the message file
 if len(sys.argv) >= 2 :
-     if os.path.isfile(sys.argv[1]) :
-          FileName = sanitize( sys.argv[1] )
+     FileName = sanitize( sys.argv[1] )
+     if os.path.isfile(FileName) :
           try:
                F = open( FileName, "rb" )
                InputBytes = F.read( MaxBytes )
@@ -858,7 +899,7 @@ if len(sys.argv) >= 2 :
                exit ( ERR_PERM )
 
      else:
-          print ("No such file: " + sys.argv[1] ) 
+          print ("No such file: " + FileName ) 
           exit ( ERR_INPUT )
 
      sys.argv.remove( sys.argv[1] )
@@ -925,7 +966,11 @@ try:
      cryptUser = CRYPT_UNUSED
 
      # collect randomness information
-     cryptAddRandom( CRYPT_RANDOM_SLOWPOLL )
+     try:
+          cryptAddRandom( CRYPT_RANDOM_SLOWPOLL )
+     except CryptException as e :
+          status, message = e.args
+          print("Warning: RANDOM_SLOWPOLL failed. [" + message + "]")
 
      # get Cryptlib Version
      Major = cryptGetAttribute(CRYPT_UNUSED, CRYPT_OPTION_INFO_MAJORVERSION)
@@ -992,7 +1037,7 @@ try:
                F = open (TempFile, "wb")
                F.write(Buffer)
                F.close()
-               unix("/bin/chmod 600 " + TempFile )
+               chmodf( TempFile )
           except:
                print("Error: Cannot write to temporary file " + TempFile)
                clean_envelope()
@@ -1001,25 +1046,25 @@ try:
           # run dumpasn on stored Buffer
           Result = subprocess.run(["/bin/dumpasn1","-z", TempFile], capture_output=True)
           if Result:
-                    if Result.returncode == 0:
-                         if Result.stdout:
-                              RESULT = Result.stdout.decode()
-                              List = RESULT.split('\n')
-                              i = 0
-                              while i < NumLines :
-                                   print(str(List[i]))
-                                   i += 1
-                    else:
-                         print(Result.stderr.decode())
-                         unix("/bin/rm -f " + TempFile)
-                         clean_envelope()
-                         exit( ERR_CORRUPT )
+               if Result.returncode == 0:
+                    if Result.stdout:
+                         RESULT = Result.stdout.decode()
+                         List = RESULT.split('\n')
+                         i = 0
+                         while i < NumLines and i < len(List):
+                              print(str(List[i]))
+                              i += 1
+               else:
+                    print(Result.stderr.decode())
+                    destroy(TempFile)
+                    clean_envelope()
+                    exit( ERR_CORRUPT )
           else:
-               unix("/bin/rm -f " + TempFile)
+               destroy(TempFile)
                clean_envelope()
                exit ( ERR_USE )
 
-          unix("/bin/rm -f " + TempFile)
+          destroy(TempFile)
           clean_envelope()
           exit ( OK )
 
@@ -1032,7 +1077,7 @@ try:
 
           # expand the internal buffer which is set to 32K by default. This limits the input data size.
           try:
-                cryptSetAttribute( Envelope, CRYPT_ATTRIBUTE_BUFFERSIZE,  MaxBufferSize )
+               cryptSetAttribute( Envelope, CRYPT_ATTRIBUTE_BUFFERSIZE,  MaxBufferSize )
           except CryptException as e :
                status, message = e.args
                print( "Error: cannot set BufferSize to " +  str(MaxBufferSize) )
@@ -1127,16 +1172,15 @@ try:
           exit( OK )
 
 
-
 #-------DECRYPT----------#
      if Mode == "decrypt":
           print ("Decrypting " + FileName + " with " + KeyFileName)
-          # get Data. Data must be modifiable Buffer
-
+          
+          # get Data as bytearray
           if InputBytes:
                Data.extend( InputBytes )
           Data = analyze_SMIME_data( Data )
-     
+
           # base64 decode ASCII
           Buffer = bytearray()
           if not BINARY:
@@ -1188,9 +1232,8 @@ try:
                           print_debug("A password is needed ...")
 
                           print("Please enter the password that you use to protect the private key: ")
-                          Password.extend( unix(ASKPASS).encode() )
+                          get_password() 
                           if len( Password ) >= MinPasswordLength and len( Password ) <= MaxPasswordLength :
-                               Password = Password[:-1]
                                try:
                                     cryptSetAttributeString( Envelope, CRYPT_ENVINFO_PASSWORD, Password )
                                     print_debug("Added the Password to the envelope")
@@ -1208,7 +1251,6 @@ try:
                                          exit (ERR_DECRYPT)
                           else:
                                print ("Error: Your password must have at least " + str(MinPasswordLength) + " characters. Nothing done.")
-                               unix("/bin/stty sane")
                                clean_envelope()
                                exit (ERR_PASSWORD)
 
@@ -1241,7 +1283,7 @@ try:
                     F = open( OutFilename, "wb" )
                     F.write( Cleartext )
                     F.close()
-                    unix("chmod 600 " + OutFilename)
+                    chmodf(OutFilename)
                     print("Clear text written to " +  OutFilename)
                     Cleartext = get_random_bytes( len(Cleartext) )
                except:
@@ -1278,13 +1320,11 @@ try:
 
           Cleartext = bytearray()
           Password = bytearray()
-          Password.extend( unix(ASKPASS).encode() )
+          get_password()
           if len( Password ) >= MinPasswordLength and len( Password ) <= MaxPasswordLength :
-               Password = Password[:-1]
                print_debug (str(len(Password)) + " bytes used as password")
           else:
                print ("Error: Your password must have at least " + str(MinPasswordLength) + " characters. Nothing done.")
-               unix("/bin/stty sane")
                clean_envelope()
                # terminate the program
                exit (ERR_PASSWORD)
@@ -1292,7 +1332,6 @@ try:
 
           if  len( Data ) <= MaxBytes :
                print_debug ( "Processing " + str( len( Buffer ) ) + " bytes of input data" )
-
 
                # get the private Key from the p15 file
                try:
@@ -1312,13 +1351,13 @@ try:
                     if  os.path.isfile(KeyIDFileName) :
                          KeyIDContent = bytearray()
                          F = open (KeyIDFileName, "rb")
-                         KeyIDContent = F.read()
+                         KeyIDContent = F.readlines()
                          if len(KeyIDContent) != 0:
-                              Name = KeyIDContent
+                              Name = KeyIDContent[0].strip()
                               print( "Using the key ID \'" + Name.decode() + "\' from file " + KeyIDFileName )
                          F.close()
                     else:
-                         KeyID = str(input("Please enter the key ID: "))
+                         KeyID = str(safe_input("Please enter the key ID: "))
                          print()
                          Name.extend(sanitize(KeyID).encode())
 
@@ -1421,11 +1460,11 @@ try:
 
                # check, if the signature can be verified
                if not SignatureIsOK(Signature, Buffer):
-                    print( "Signature is not OK.")
+                    print( "The signature is NOT VALID.")
                     clean_envelope()
                     exit( ERR_SIGN )
                else:
-                    print_debug( "The signature has been verified." )
+                    print_debug( "The signature has been VERIFIED." )
 
 
           else:
@@ -1540,12 +1579,12 @@ try:
                Result = cryptGetAttribute( Envelope, CRYPT_ENVINFO_SIGNATURE_RESULT)
                if Result == CRYPT_ERROR_SIGNATURE :
                     print("The signature is bad.\n")
-                    unix("rm -f " + OutFilename)
+                    destroy(OutFilename)
                     clean_envelope()
                     exit( ERR_BADSIG )
 
                elif Result == 0 :
-                    print("The signature is good.")
+                    print("The signature is good.\n")
 
                     # print verification information
                     CertChain = cryptGetAttribute( Envelope, CRYPT_ENVINFO_SIGNATURE )
@@ -1566,7 +1605,7 @@ try:
                          F = open (OutFilename + ".certchain","bw")
                          F.write(EncodedCert)
                          F.close()
-                         unix("chmod 600 '" + OutFilename + ".certchain" + "'")
+                         chmodf(OutFilename + ".certchain")
 
                     # the end-user cert check needs the root CA certificate to proceed, check if it exists
                     if CERTIMPORTED:
@@ -1622,10 +1661,10 @@ try:
      # normal clean up
      print_debug("Final shutdown ...")
      clean_envelope()
-     exit(0)
+     exit( OK )
 
 except CryptException as e :
      status, message = e.args
      print( "Error ... " + message )
  
-exit(0)
+exit( OK )

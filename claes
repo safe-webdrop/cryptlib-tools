@@ -2,7 +2,7 @@
 
 """
 * File     : claes
-* Version  : 1.2
+* Version  : 1.3
 * License  : BSD-3-Clause
 *
 * Copyright (c) 2022 - 2026
@@ -66,7 +66,7 @@ except:
      print( ERR_IMPORT )
      exit( ERR_INSTALL )
 
-Version        = "1.2"
+Version        = "1.3"
 DEBUG          = False
 BINARY         = False
 MaxBytes       = 268400000                   # no more than INT_MAX//8 (pow(2,31)//8)
@@ -79,6 +79,7 @@ AESblocksize   = 16
 NumberOfBlocks = 0
 
 FileName          = ""
+Password          = bytearray()
 MinPasswordLength = 8
 MaxPasswordLength = 64
 DECRYPTION        = False
@@ -91,7 +92,6 @@ ASKPASS = "/bin/systemd-ask-password"
 if not os.path.isfile(ASKPASS) :
      print ("Error: Please install " + ASKPASS + " to ensure safe password input")
      exit(ERR_INSTALL)
-
 
 
 
@@ -166,6 +166,33 @@ def safe_input(message):
           return ""
 
 #-----------------------------------------------------------#
+def get_password():
+     # writes a bytearray without \n into the global variable Password
+     
+     import subprocess
+     global Password
+     
+     Password = bytearray()
+     try:
+          Result = subprocess.run([ASKPASS], capture_output=True)
+          if Result and  Result.returncode == 0 :
+               Password = bytearray(Result.stdout.strip())
+               # overwrite Result.stdout
+               Result.stdout = b'0'*64
+     except:
+          # recover tty after keyboard interrupt, when echo is turned off
+          Result = subprocess.run(["/bin/stty","sane"])
+
+#-----------------------------------------------------------#
+def chmodf (FileName):
+     #FileName is a string
+     try:
+          os.chmod(sanitize(FileName),0o600)
+          return True
+     except:
+          return False
+
+#-----------------------------------------------------------#
 def get_proper_filename():
      global OutFilename
 
@@ -199,20 +226,6 @@ def get_proper_filename():
                     RET = safe_input("Overwrite " + OutFilename + " ? [y/n] ")
                     if (RET !=  "y") :
                          OutFilename = safe_input("Filename to write : ")
-
-#-----------------------------------------------------------#
-def unix (command) :
-     Result = ""
-     if os.name == "posix" :
-          try:
-               # do not santitize, because every byte can be part of the password. 
-               Pipe = os.popen(command, "r")
-               Result = Pipe.read()
-               Pipe.close()
-               return Result
-          except:
-               print("\nA Unix command failed!\n")
-     return Result
 
 #-----------------------------------------------#
 def sanitize(data):
@@ -314,7 +327,7 @@ def write_pgp_message(buff, pathname):
                F = open(pathname,'wb')
                F.write( buff )
                F.close()
-          unix("chmod 600 " + pathname)
+          chmodf (pathname)
           return True
      except:
           print (str( sys.exc_info()[0]) )
@@ -349,7 +362,7 @@ def write_openssl_message(salt, buff, pathname):
                F = open(pathname,'wb')
                F.write( OUT )
                F.close()
-          unix("chmod 600 " + pathname)
+          chmodf (pathname)
           return True
      except:
           print (str( sys.exc_info()[0]) )
@@ -378,7 +391,7 @@ def write_cms_message(buff, pathname):
                if i < len(ASCII) :
                     F.write("\n")
           F.write("-----END CMS-----\n")
-          unix("chmod 600 " + pathname)
+          chmodf (pathname)
           return True
      except:
           print (str( sys.exc_info()[0]) )
@@ -495,10 +508,10 @@ def pbkdf2 ( salt ):
      if ( Mode == "openssl" ) and salt :
           # generate session key and iv from password and salt using pbkdf2
           # 256 bit AES is the default
-          dk = pbkdf2_hmac('sha256', password, salt, iterations, 48)
+          dk = pbkdf2_hmac('sha256', Password, salt, iterations, 48)
           if (KEY128) :
                # use 128 bit AES key
-               dk = pbkdf2_hmac('sha256', password, salt, iterations, 32)
+               dk = pbkdf2_hmac('sha256', Password, salt, iterations, 32)
           KeyandIV = bytearray()
           KeyandIV.extend( dk )
           return KeyandIV
@@ -551,10 +564,10 @@ def context_info():
 #-----------------------------------------------------------#
 def clean_envelope():
      global Envelope
-     global password
+     global Password
      try:
           print_debug("Cleaning envelope before exit")
-          password = get_random_bytes( len(password) )
+          Password = get_random_bytes( len(Password) )
           cryptDestroyEnvelope( Envelope )
           cryptEnd()
      except:
@@ -563,11 +576,11 @@ def clean_envelope():
 #-----------------------------------------------------------#
 def clean_context():
      global AESContext 
-     global password
+     global Password
      global Envelope
      try:
           print_debug("Cleaning context before exit")
-          password = get_random_bytes( len(password) )
+          Password = get_random_bytes( len(Password) )
           cryptDestroyContext( AESContext )
           cryptDestroyEnvelope( Envelope )
           cryptEnd()
@@ -706,32 +719,27 @@ if not DECRYPTION:
 
 # Prompt the user for a passphrase of sufficient quality
 # because either encryption or decryption will use it anyway
+# read global variable Password as bytearray, maybe empty
 
-password = bytearray()
-try:
-     password.extend( unix(ASKPASS).encode() )
-except:
-     unix("/bin/stty sane")
+get_password()
 
-if len( password ) >= MinPasswordLength and len( password ) <= MaxPasswordLength :
-     password = password[:-1]
+if len( Password ) >= MinPasswordLength and len( Password ) <= MaxPasswordLength :
      if ( ENVELOPE and (not DECRYPTION) ) :
           try:
                # add the encryption password to the envelope
-               cryptSetAttributeString( Envelope, CRYPT_ENVINFO_PASSWORD, password )
+               cryptSetAttributeString( Envelope, CRYPT_ENVINFO_PASSWORD, Password )
           except CryptException as e :
                status, message = e.args
                if (status == CRYPT_ERROR_WRONGKEY) :
                     print("Error: " +  message)
-                    password = get_random_bytes( len(password) )
+                    Password = get_random_bytes( len(Password) )
                     clean_envelope()
                     exit( ERR_WRONGKEY )
           # randomize password buffer as it is no longer needed
-          password = get_random_bytes( len(password) )
-          print_debug (str(len(password)) + " bytes used as password")
+          Password = get_random_bytes( len(Password) )
+          print_debug (str(len(Password)) + " bytes used as password")
 else:
      print ("Error: Your password must have at least " + str(MinPasswordLength) + " characters. Nothing done.")
-     unix("/bin/stty sane")
      clean_envelope()
      # terminate the program
      exit (ERR_PASSWORD)
@@ -839,7 +847,7 @@ if (not DECRYPTION) :
           if (Mode == "openssl") :
                if len(Data) >= MaxBytes:
                     # clean password before exit
-                    password = get_random_bytes( len(password) )
+                    Password = get_random_bytes( len(Password) )
                     print("Input is too large")
                     clean_envelope()
                     exit( ERR_SIZE )
@@ -890,7 +898,7 @@ if (not DECRYPTION) :
                     except CryptException as e :
                          status, message = e.args
                          print_debug( "Encryption error while encrypting data ...")
-                         print_debug(str(status) +  message )
+                         print_debug( str(status) +  message )
                          clean_context()
                          exit( ERR_ENCRYPT )
 
@@ -1020,10 +1028,10 @@ else:
 
                # insert the password
                try:
-                    cryptSetAttributeString( Envelope, CRYPT_ENVINFO_PASSWORD, password )
+                    cryptSetAttributeString( Envelope, CRYPT_ENVINFO_PASSWORD, Password )
                     # randomize password buffer as it is no longer needed
-                    password = get_random_bytes( len(password) )
-                    print_debug ( str(len(password)) + " bytes used as password" )
+                    Password = get_random_bytes( len(Password) )
+                    print_debug ( str(len(Password)) + " bytes used as password" )
                except CryptException as e :
                     status, message = e.args
                     if (status == CRYPT_ERROR_WRONGKEY) :
@@ -1215,7 +1223,7 @@ else:
                F = open( OutFilename, "wb" )
                F.write( Cleartext )
                F.close()
-               unix("chmod 600 " + OutFilename)
+               chmodf (OutFilename)
                print("Clear text written to " +  OutFilename)
           except:
                print( "Error: cannot write decrypted bytes to " + OutFilename )
@@ -1231,8 +1239,8 @@ else:
      Cleartext = get_random_bytes( len (Cleartext) )
      
 # normal clean up
-password = get_random_bytes( len(password) )
-del password
+Password = get_random_bytes( len(Password) )
+del Password
 
 try:
      cryptDestroyEnvelope( Envelope )
