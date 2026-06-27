@@ -88,8 +88,10 @@ to a selected server and transferres any amount of data from the server (GET) or
 the binary content of a file to the server (PUT).
 
 Unlike a web browser or CLI programs like curl, which rely heavily on the global public key
-infrastructure, <a href="https://senderek.ie/cryptlib/tools/cltls"><b>clTLS</b></a> is designed to do only one thing, <b>getting sensitive information from A to B
-in the most secure way available</b>. In order to achieve this reliable data exchange,
+infrastructure, <a href="https://senderek.ie/cryptlib/tools/cltls"><b>clTLS</b></a> is designed
+to do only one thing,<a href="https://senderek.ie/docs/getting_sensitive_information_from_A_to_B.php">
+<b>getting sensitive information from A to B in the most secure way available</b></a>. 
+In order to achieve this reliable data exchange,
 clTLS connects only to those web servers (via TLS) which can be authenticated using
 <i>known-good information</i> that is available to the end-user.
 
