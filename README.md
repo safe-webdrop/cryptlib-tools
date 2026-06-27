@@ -80,6 +80,47 @@ clsmime [OPTIONS] decrypt encrypted_message KeysetName
 clsmime [OPTIONS] sign messagefile KeysetName
 clsmime [OPTIONS] verify signed_message [CArootCertificate]
 ```
+
+## clTLS - Long-Term Secure Data Exchange
+
+<a href="https://senderek.ie/cryptlib/tools/cltls"><b>clTLS</b></a> opens a TLS-1.2 session
+to a selected server and transferres any amount of data from the server (GET) or uploads
+the binary content of a file to the server (PUT).
+
+Unlike a web browser or CLI programs like curl, which rely heavily on the global public key
+infrastructure, <a href="https://senderek.ie/cryptlib/tools/cltls"><b>clTLS</b></a> is designed to do only one thing, <b>getting sensitive information from A to B
+in the most secure way available</b>. In order to achieve this reliable data exchange,
+clTLS connects only to those web servers (via TLS) which can be authenticated using
+<i>known-good information</i> that is available to the end-user.
+
+Essentially, there are two very different mechanisms that clTLS uses to ensure that the
+connection is actually established with the correct web server a user wants to connect to.
+But both mechanisms require trustworthy information that must be stored in the user's
+home directory before any TLS data exchange can happen.
+
+The first one (<b>fingerprints</b>) is used to make the reliance on a global PKI completely obsolete.
+Once the end-user is in possession of a fingerprint (SHA-256) of the certificate, a web server
+uses in the TLS-handshake, it can be stored in the user's home directory as a sign of trust.
+It does not matter, whether the server certificate has been acquired via a public CA or is a
+self-signed certificate, the existence of the stored fingerprint authenticates the web server
+as long as it produces the matching certificate when a connection is being initiated.
+
+The global public key infrastructure has its inherent problems, because generally, any CA
+can issue a certificate for any web server domain.
+In contrast, <b>cltls</b> is build to <b>restrict the number of trusted CAs</b> 
+to a very limited set of CAs that are positively known to work securely. 
+This set of trusted CAs is under the end-user's sole control as only the few (checked) 
+CA certificates that are stored in the user's home directory will be allowed to verify
+a server certificate, not the plethora of CAs build into the operating system by default.
+
+```
+cltls [OPTIONS] GET https://servername/path/to/resource[?query]<br>
+cltls [OPTIONS] GET servername /path/to/resource[?query]<br>
+cltls [OPTIONS] PUT https://servername/path/to/resource[?query] file<br>
+cltls [OPTIONS] PUT servername /path/to/resource[?query] file<br>
+cltls [OPTIONS] STORE servername
+```
+
 ## More to come!
 
 These are only three examples of how you can use Cryptlib to build reliable tools for users.
